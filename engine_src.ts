@@ -116,13 +116,12 @@ const SUMMARY: TableCell[][] = [
 ];
 
 // ===== ENGINE (shared verbatim between the Grok Page and the MileKaki app) =====
-type Mode = "tap" | "chip" | "wallet" | "online" | "fcy" | "fcyon";
+type Mode = "tap" | "wallet" | "online" | "fcy" | "fcyon";
 type Res = { id: string; group: string; card: string; mpd: number; base: number; bucket: string; how: string; cap: string; note: string; kf: string; flag: boolean; added: boolean };
 type Opts = { ls?: string[]; ladys?: string; tags?: string[] };
 
 const MODES: { value: Mode; label: string }[] = [
   { value: "tap", label: "Contactless card" },
-  { value: "chip", label: "Chip/PIN" },
   { value: "wallet", label: "Apple/Google Pay" },
   { value: "online", label: "Online SGD" },
   { value: "fcy", label: "Overseas FCY" },
@@ -177,7 +176,7 @@ const NONE = "No miles";
 const KF_HSBC = "30,000:10,000 since 16 Jan 2025";
 const RBN = "Pay one-off online or in-app; recurring card-on-file billing earns nothing";
 const r2 = (x: number) => Math.round(x * 100) / 100;
-const instore = (m: Mode) => m === "tap" || m === "chip" || m === "wallet" || m === "fcy";
+const instore = (m: Mode) => m === "tap" || m === "wallet" || m === "fcy";
 const isFcy = (m: Mode) => m === "fcy" || m === "fcyon";
 const isOnline = (m: Mode) => m === "online" || m === "fcyon";
 
@@ -193,8 +192,8 @@ function rPV(n: number, m: Mode): Res {
     if (m === "wallet" || m === "fcy") return z(4, "contactless", "Phone-wallet tap in store", cap, "SPC and Shell earn nothing");
   }
   if (m === "wallet" || m === "fcy") return z(4, "contactless", m === "fcy" ? "Phone-wallet tap overseas (T&Cs set no local-only limit); a card tap earns 0.4" : "Phone-wallet tap in store", cap, "General rule: mobile contactless covers any MCC that isn't excluded");
-  if (m === "tap" || m === "chip") {
-    if (n === 4111 && m === "tap") return z(4, "contactless", "SimplyGo fare tap counts as mobile contactless (card or phone)", cap, "");
+  if (m === "tap") {
+    if (n === 4111) return z(4, "contactless", "SimplyGo fare tap counts as mobile contactless (card or phone)", cap, "");
     return z(0.4, "", "Physical card in store: base", "—", "Pay with Apple/Google/Samsung Pay for 4 mpd");
   }
   if (PV_ON(n)) return z(4, "online", "Online, MCC on PV's online list, not recurring", cap, "In-app Apple/Google Pay counts as online");
@@ -211,7 +210,6 @@ function rVS(n: number, m: Mode): Res {
     return z(4, "local", "Petrol category; min. S$1,000 SGD petrol + contactless per statement month", cap, "SPC and Shell earn nothing");
   }
   if (m === "tap" || m === "wallet") return z(4, "local", n === 4111 ? "SimplyGo counts as contactless; min. S$1,000 per statement month" : "Contactless tap (card or phone); min. S$1,000 SGD petrol + contactless per statement month", cap, n === 4111 ? "" : "General rule: contactless covers any MCC that isn't excluded (MST doesn't count)");
-  if (m === "chip") return z(0.4, "", "Chip/PIN isn't contactless: base", "—", "Tap the card or phone for 4 mpd");
   return z(0.4, "", "Online SGD spend: base", "—", "");
 }
 
@@ -269,7 +267,6 @@ function rHSBC(n: number, m: Mode): Res {
   const z = (mpd: number, b: string, how: string, k: string, note: string, kf: string) => R("hsbc", "hsbc", c, mpd, 0.4, b, how, k, note, false, kf);
   if (HSBC_X(n)) return z(0, "", NONE, "—", "On HSBC's exclusion list", "");
   if (HSBC_WL(n)) {
-    if (m === "chip") return z(0.4, "", "Chip/PIN isn't contactless: base", "—", "Tap the card or phone for 4 mpd", `KrisFlyer: 0.33 mpd (${KF_HSBC})`);
     const how = isOnline(m) ? "Online (incl. card-on-file), MCC on the whitelist" : "Contactless tap (card or phone), MCC on the whitelist";
     return z(4, "main", how, "S$1,000/cal. month", `10X = 4 mpd at 25,000:10,000 partners; 8 mpd with S$50k EGA ADB (cap S$1,200)${isFcy(m) ? "; 3.25% FX fee" : ""}`, `KrisFlyer: 3.33 mpd (${KF_HSBC}); 6.67 at 8 mpd tier`);
   }
@@ -299,7 +296,7 @@ function rXL(n: number, m: Mode): Res {
 // ----- Cards added from MileLion's "What card do I use for..." guide (updated 8 Oct 2026) -----
 type Bonus = { mcc?: string; tags?: string[]; modes?: Mode[]; mpd: number; bucket?: string; how: string; flag?: boolean };
 type Added = { id: string; name: string; bank: string; local: number | null; fcy: number | null; bonuses: Bonus[]; bills: { [k: string]: number }; cap: string; note: string; src: string; referralUrl?: string; referralLabel?: string; disclosure?: string };
-const STORE: Mode[] = ["tap", "chip", "wallet"];
+const STORE: Mode[] = ["tap", "wallet"];
 const FCYM: Mode[] = ["fcy", "fcyon"];
 const SIA = ["sia", "scoot"];
 const ADDED: Added[] = [
@@ -393,12 +390,12 @@ function rAdded(a: Added, n: number, m: Mode, o: Opts): Res | null {
     return mk(0, "", NONE, `MileLion's guide lists no miles on ${bl.label} for this card; assumed excluded`, true, "—");
   }
   const bx = BANK_X[a.bank];
-  if (bx && bx(n)) return mk(0, "", NONE, `On ${a.bank}'s standard exclusion list (as used for Ernest's ${a.bank} card)`, false, "—");
+  if (bx && bx(n)) return mk(0, "", NONE, `On ${a.bank}'s standard exclusion list`, false, "—");
   if (base === null) return null;
   return mk(base, "", isFcy(m) ? "General FCY rate" : "General local rate", a.bank === "AMEX" || a.bank === "OCBC" || a.bank === "SC" || a.bank === "BOC" || a.bank === "DCS" || a.bank === "Chocolate" || a.bank === "GXS" ? "Exclusions not individually checked" : "", false);
 }
 
-// Merchant-specific overrides for Ernest's cards (MileLion guide, 8 Oct 2026).
+// Merchant-specific overrides (MileLion guide, 8 Oct 2026).
 function tagOverride(r: Res, o: Opts, m: Mode): Res {
   const t = o.tags ?? [];
   if (t.indexOf("krisplus") >= 0) {
@@ -414,8 +411,15 @@ function tagOverride(r: Res, o: Opts, m: Mode): Res {
   return r;
 }
 
-// Returns every card (Ernest's 8 + Citi+Amaze + added cards), best headline mpd first. n = 0 means "no single MCC".
-function lookupAll(n: number, m: Mode, o: Opts = {}): Res[] {
+// Returns every card (the core set, Citi+Amaze, and added cards), best headline mpd first. n = 0 means "no single MCC".
+function normalizeMode(m: string): Mode {
+  if (m === "chip") return "tap";
+  if (m === "tap" || m === "wallet" || m === "online" || m === "fcy" || m === "fcyon") return m;
+  return "tap";
+}
+
+function lookupAll(n: number, m: Mode | string, o: Opts = {}): Res[] {
+  m = normalizeMode(m);
   const ls = o.ls === undefined ? ["dining", "travel"] : o.ls;
   const mine: Res[] = [rPV(n, m), rVS(n, m), rCiti(n, m, false), rCiti(n, m, true), rDBS(n, m), rLS(n, ls), rHSBC(n, m), rTrust(n), rXL(n, m)].map((r: Res) => tagOverride(r, o, m));
   const citi = mine[2], amz = mine[3];
@@ -1073,5 +1077,5 @@ function searchMerchants(q: string): Merchant[] {
 }
 // ===== END APP DATA =====
 
-export { ROWS, CARDS, SUMMARY, GROUPS, MODES, LS_CATS, ADDED, META, MERCHANTS, REFERRALS, lookup, lookupAll, kind, searchMerchants, blockOf, quoteEarn, splitPlan, referralFor, capThresholds, capAlertsToFire, guessMcc, parseStatementText, parseCsv, reconcileStatement, explainMilesGap, ladySettings, cycleBounds, dateInCycle, monthlySummary, parseBackup, mergeLogs };
+export { ROWS, CARDS, SUMMARY, GROUPS, MODES, LS_CATS, ADDED, META, MERCHANTS, REFERRALS, lookup, lookupAll, kind, searchMerchants, blockOf, quoteEarn, splitPlan, referralFor, capThresholds, capAlertsToFire, guessMcc, parseStatementText, parseCsv, reconcileStatement, explainMilesGap, ladySettings, cycleBounds, dateInCycle, monthlySummary, parseBackup, mergeLogs, normalizeMode };
 export type { Mode, Res, Opts, Merchant, Meta, Added, Quote, QuoteIn, SplitPlan, SplitCard };

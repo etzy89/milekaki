@@ -21,9 +21,13 @@
   if (settings.showAll === undefined) settings.showAll = false;
   if (settings.notifyCaps === undefined) settings.notifyCaps = false;
   var oldMode = load("mode", null);
+  if (settings.mode === "chip") settings.mode = "tap";
   var state = { mode: MODE_IDS.indexOf(settings.mode) >= 0 ? settings.mode : (oldMode === "online" ? "online" : "wallet"), tags: [], merchant: null };
   var log = load("mm.log", []).filter(function (e) { return e && e.date && (Date.now() - new Date(e.date).getTime()) < 100 * 864e5; });
+  var chipMoved = false;
+  log.forEach(function (e) { if (e.mode === "chip") { e.mode = "tap"; chipMoved = true; } });
   function persist() { save("mm.settings", settings); save("mm.log", log); }
+  if (chipMoved) persist();
   if (!hadLadys) persist();
 
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
@@ -573,7 +577,8 @@
   $("sources").innerHTML = SOURCES.map(function (s) { return '<li><a href="' + esc(s.href) + '" target="_blank" rel="noopener">' + esc(s.title) + "</a> · " + esc(s.site) + (s.date ? " · " + esc(s.date) : "") + "</li>"; }).join("");
   var h = location.hash.slice(1).split("/");
   if (/^\d{4}$/.test(h[0])) inp.value = h[0];
-  if (MODE_IDS.indexOf(h[1]) >= 0) state.mode = h[1];
+  if (h[1] === "chip") state.mode = "tap";
+  else if (MODE_IDS.indexOf(h[1]) >= 0) state.mode = h[1];
   else if (h[1] === "store") state.mode = "wallet";
   renderAdded(); renderAll();
   if (log.length && (!settings.lastBackup || (Date.now() - new Date(settings.lastBackup + "T12:00:00").getTime()) > 30 * 864e5)) {

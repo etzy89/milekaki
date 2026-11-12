@@ -58,6 +58,7 @@ var MCCX = (() => {
     lookupAll: () => lookupAll,
     mergeLogs: () => mergeLogs,
     monthlySummary: () => monthlySummary,
+    normalizeMode: () => normalizeMode,
     parseBackup: () => parseBackup,
     parseCsv: () => parseCsv,
     parseStatementText: () => parseStatementText,
@@ -155,7 +156,6 @@ var MCCX = (() => {
   ];
   const MODES = [
     { value: "tap", label: "Contactless card" },
-    { value: "chip", label: "Chip/PIN" },
     { value: "wallet", label: "Apple/Google Pay" },
     { value: "online", label: "Online SGD" },
     { value: "fcy", label: "Overseas FCY" },
@@ -217,8 +217,8 @@ var MCCX = (() => {
       if (m === "wallet" || m === "fcy") return z(4, "contactless", "Phone-wallet tap in store", cap, "SPC and Shell earn nothing");
     }
     if (m === "wallet" || m === "fcy") return z(4, "contactless", m === "fcy" ? "Phone-wallet tap overseas (T&Cs set no local-only limit); a card tap earns 0.4" : "Phone-wallet tap in store", cap, "General rule: mobile contactless covers any MCC that isn't excluded");
-    if (m === "tap" || m === "chip") {
-      if (n === 4111 && m === "tap") return z(4, "contactless", "SimplyGo fare tap counts as mobile contactless (card or phone)", cap, "");
+    if (m === "tap") {
+      if (n === 4111) return z(4, "contactless", "SimplyGo fare tap counts as mobile contactless (card or phone)", cap, "");
       return z(0.4, "", "Physical card in store: base", "\u2014", "Pay with Apple/Google/Samsung Pay for 4 mpd");
     }
     if (PV_ON(n)) return z(4, "online", "Online, MCC on PV's online list, not recurring", cap, "In-app Apple/Google Pay counts as online");
@@ -234,7 +234,6 @@ var MCCX = (() => {
       return z(4, "local", "Petrol category; min. S$1,000 SGD petrol + contactless per statement month", cap, "SPC and Shell earn nothing");
     }
     if (m === "tap" || m === "wallet") return z(4, "local", n === 4111 ? "SimplyGo counts as contactless; min. S$1,000 per statement month" : "Contactless tap (card or phone); min. S$1,000 SGD petrol + contactless per statement month", cap, n === 4111 ? "" : "General rule: contactless covers any MCC that isn't excluded (MST doesn't count)");
-    if (m === "chip") return z(0.4, "", "Chip/PIN isn't contactless: base", "\u2014", "Tap the card or phone for 4 mpd");
     return z(0.4, "", "Online SGD spend: base", "\u2014", "");
   }
   function rCiti(n, m, amaze) {
@@ -287,7 +286,6 @@ var MCCX = (() => {
     const z = (mpd, b, how, k, note, kf) => R("hsbc", "hsbc", c, mpd, 0.4, b, how, k, note, false, kf);
     if (HSBC_X(n)) return z(0, "", NONE, "\u2014", "On HSBC's exclusion list", "");
     if (HSBC_WL(n)) {
-      if (m === "chip") return z(0.4, "", "Chip/PIN isn't contactless: base", "\u2014", "Tap the card or phone for 4 mpd", `KrisFlyer: 0.33 mpd (${KF_HSBC})`);
       const how = isOnline(m) ? "Online (incl. card-on-file), MCC on the whitelist" : "Contactless tap (card or phone), MCC on the whitelist";
       return z(4, "main", how, "S$1,000/cal. month", `10X = 4 mpd at 25,000:10,000 partners; 8 mpd with S$50k EGA ADB (cap S$1,200)${isFcy(m) ? "; 3.25% FX fee" : ""}`, `KrisFlyer: 3.33 mpd (${KF_HSBC}); 6.67 at 8 mpd tier`);
     }
@@ -311,7 +309,7 @@ var MCCX = (() => {
     if (n === 6513) return z(0.4, "", "Not on XL's exclusion list", "\u2014", "Earning unconfirmed", true);
     return z(0.4, "", "Not on XL's whitelist: base", "\u2014", "Earns 4 mpd if charged in FCY", false);
   }
-  const STORE = ["tap", "chip", "wallet"];
+  const STORE = ["tap", "wallet"];
   const FCYM = ["fcy", "fcyon"];
   const SIA = ["sia", "scoot"];
   const ADDED = [
@@ -405,7 +403,7 @@ var MCCX = (() => {
       return mk(0, "", NONE, `MileLion's guide lists no miles on ${bl.label} for this card; assumed excluded`, true, "\u2014");
     }
     const bx = BANK_X[a.bank];
-    if (bx && bx(n)) return mk(0, "", NONE, `On ${a.bank}'s standard exclusion list (as used for Ernest's ${a.bank} card)`, false, "\u2014");
+    if (bx && bx(n)) return mk(0, "", NONE, `On ${a.bank}'s standard exclusion list`, false, "\u2014");
     if (base === null) return null;
     return mk(base, "", isFcy(m) ? "General FCY rate" : "General local rate", a.bank === "AMEX" || a.bank === "OCBC" || a.bank === "SC" || a.bank === "BOC" || a.bank === "DCS" || a.bank === "Chocolate" || a.bank === "GXS" ? "Exclusions not individually checked" : "", false);
   }
@@ -424,7 +422,13 @@ var MCCX = (() => {
     }
     return r;
   }
+  function normalizeMode(m) {
+    if (m === "chip") return "tap";
+    if (m === "tap" || m === "wallet" || m === "online" || m === "fcy" || m === "fcyon") return m;
+    return "tap";
+  }
   function lookupAll(n, m, o = {}) {
+    m = normalizeMode(m);
     const ls = o.ls === void 0 ? ["dining", "travel"] : o.ls;
     const mine = [rPV(n, m), rVS(n, m), rCiti(n, m, false), rCiti(n, m, true), rDBS(n, m), rLS(n, ls), rHSBC(n, m), rTrust(n), rXL(n, m)].map((r) => tagOverride(r, o, m));
     const citi = mine[2], amz = mine[3];

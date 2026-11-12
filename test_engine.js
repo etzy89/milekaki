@@ -2,11 +2,11 @@ const fs=require("fs"); eval(fs.readFileSync(__dirname+"/public/engine_core.js",
 let fail=0; const ok=(c,msg)=>{ if(!c){fail++;console.log("FAIL",msg);} };
 const get=(n,m,id,o)=>M.lookupAll(n,m,o||{}).find(r=>r.id===id);
 const show=(n,m,o)=>console.log(n,m,M.lookup(n,m,o||{}).map(r=>`${r.id}:${r.mpd}${r.flag?"?":""}`).join(" "));
-for (const [n,m] of [[5812,"wallet"],[5812,"tap"],[5812,"chip"],[5411,"wallet"],[4111,"tap"],[7372,"online"],[4814,"online"],[3501,"online"],[7399,"online"],[5999,"fcy"]]) show(n,m);
+for (const [n,m] of [[5812,"wallet"],[5812,"tap"],[5411,"wallet"],[4111,"tap"],[7372,"online"],[4814,"online"],[3501,"online"],[7399,"online"],[5999,"fcy"]]) show(n,m);
 // checks
 ok(get(5812,"wallet","pv").mpd===4,"PV wallet 4"); ok(get(5812,"tap","pv").mpd===0.4,"PV card tap base");
-ok(get(4111,"tap","pv").mpd===4,"PV simplygo"); ok(get(5812,"chip","vs").mpd===0.4,"VS chip base"); ok(get(5541,"chip","vs").mpd===4,"VS petrol chip");
-ok(get(5812,"chip","hsbc").mpd===0.4,"HSBC chip base"); ok(get(5812,"tap","hsbc").mpd===4 && /3.33/.test(get(5812,"tap","hsbc").kf),"HSBC tap 4 + kf");
+ok(get(4111,"tap","pv").mpd===4,"PV simplygo"); ok(get(5812,"tap","vs").mpd===4,"VS contactless"); ok(get(5541,"tap","vs").mpd===4,"VS petrol tap");
+ok(!M.MODES.some(m=>m.value==="chip") && M.normalizeMode("chip")==="tap" && get(5812,"chip","hsbc").mpd===get(5812,"tap","hsbc").mpd,"chip/PIN removed, treated as contactless"); ok(get(5812,"tap","hsbc").mpd===4 && /3.33/.test(get(5812,"tap","hsbc").kf),"HSBC tap 4 + kf");
 ok(get(7399,"online","citi").mpd===0.4 && !get(7399,"online","citi").flag,"Citi 7399 base resolved");
 ok(get(4111,"tap","trust").mpd===1.3 && !/rounding/i.test(get(4111,"tap","trust").note + get(5999,"tap","trust").note),"Trust earns on the actual amount");
 ok(M.blockOf("trust").block===0,"Trust no S$5 block");
