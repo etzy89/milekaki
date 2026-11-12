@@ -358,10 +358,16 @@
   }
 
   // ----- tabs -----
+  function selectTab(name) {
+    var btn = document.querySelector('.tabs button[data-tab="' + name + '"]');
+    if (!btn || !$("tab-" + name)) return;
+    document.querySelectorAll(".tabs button").forEach(function (x) { x.setAttribute("aria-selected", x === btn ? "true" : "false"); });
+    document.querySelectorAll(".tab").forEach(function (t) { t.hidden = t.id !== "tab-" + name; });
+    if (btn.scrollIntoView) btn.scrollIntoView({ inline: "center", block: "nearest" });
+  }
   document.querySelector(".tabs").addEventListener("click", function (e) {
     var b = e.target.closest("button"); if (!b) return;
-    document.querySelectorAll(".tabs button").forEach(function (x) { x.setAttribute("aria-selected", x === b ? "true" : "false"); });
-    document.querySelectorAll(".tab").forEach(function (t) { t.hidden = t.id !== "tab-" + b.dataset.tab; });
+    selectTab(b.dataset.tab);
   });
 
   // ----- statement reconcile (on device only) -----
@@ -576,10 +582,7 @@
   }
   var params = new URLSearchParams(location.search);
   var tab = params.get("tab");
-  if (tab && $("tab-" + tab)) {
-    document.querySelectorAll(".tabs button").forEach(function (x) { x.setAttribute("aria-selected", x.dataset.tab === tab ? "true" : "false"); });
-    document.querySelectorAll(".tab").forEach(function (t) { t.hidden = t.id !== "tab-" + tab; });
-  }
+  if (tab && $("tab-" + tab)) selectTab(tab);
   if (params.get("focus") === "merchant") kw.focus();
   if (params.get("focus") === "mcc") inp.focus();
   if ("serviceWorker" in navigator) window.addEventListener("load", function () { navigator.serviceWorker.register("sw.js").catch(function () {}); });
