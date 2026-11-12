@@ -1,4 +1,4 @@
-# MaxiMiles
+# Mileonaire
 Personal PWA: type an MCC or a merchant name, pick how you pay, and see your cards ranked by effective miles per dollar (mpd) at each card's standard airline-partner rate (KrisFlyer differences shown in notes). Static site in `public/` (no build step at deploy). Data as of Nov 2026.
 
 - `engine_src.ts`: the rule engine. Everything above `// ===== END PAGE ENGINE` is identical to the code block in the Grok Page "MCC bonus map: Ernest's miles cards (Nov 2026)". Below that marker: app-only cap/cycle metadata (`META`) and the merchant list (`MERCHANTS`).
