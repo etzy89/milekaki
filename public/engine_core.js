@@ -42,13 +42,17 @@ var MCCX = (() => {
     MERCHANTS: () => MERCHANTS,
     META: () => META,
     MODES: () => MODES,
+    REFERRALS: () => REFERRALS,
     ROWS: () => ROWS,
     SUMMARY: () => SUMMARY,
     blockOf: () => blockOf,
+    capAlertsToFire: () => capAlertsToFire,
+    capThresholds: () => capThresholds,
     kind: () => kind,
     lookup: () => lookup,
     lookupAll: () => lookupAll,
     quoteEarn: () => quoteEarn,
+    referralFor: () => referralFor,
     searchMerchants: () => searchMerchants,
     splitPlan: () => splitPlan
   });
@@ -781,6 +785,39 @@ var MCCX = (() => {
       else text = "Put " + legs.slice(0, -1).map((l, i) => (i ? "next " : "first ") + money(l.amt) + " on " + l.name).join(", ") + ", rest on " + legs[legs.length - 1].name;
     }
     return { better, miles, singleMiles, text, legs };
+  }
+  const REFERRALS = {
+    pv: { url: "" },
+    vs: { url: "" },
+    citi: { url: "" },
+    citiamaze: { url: "" },
+    dbs: { url: "" },
+    ls: { url: "" },
+    hsbc: { url: "" },
+    trust: { url: "" },
+    xl: { url: "" }
+  };
+  function referralFor(id) {
+    const added = ADDED.filter((a) => a.id === id)[0];
+    const slot = REFERRALS[id] || {};
+    const url = String(added && added.referralUrl || slot.url || "").trim();
+    const label = String(added && added.referralLabel || slot.label || "Apply").trim() || "Apply";
+    const disclosure = String(added && added.disclosure || slot.disclosure || "Referral link").trim() || "Referral link";
+    return { url, label, disclosure };
+  }
+  function capThresholds(beforeUsed, afterUsed, cap) {
+    if (!(cap > 0)) return [];
+    const before = beforeUsed / cap * 100;
+    const after = afterUsed / cap * 100;
+    const out = [];
+    if (before < 80 && after >= 80) out.push("80");
+    if (before < 100 && after >= 100) out.push("100");
+    return out;
+  }
+  function capAlertsToFire(o) {
+    const seen = o.seen || [];
+    const keys = capThresholds(o.beforeUsed, o.afterUsed, o.cap).map((lv) => [o.cardId, o.bucket, o.cycleKey, lv].join("|")).filter((k) => seen.indexOf(k) < 0);
+    return { levels: keys.map((k) => k.split("|").pop() || ""), keys };
   }
   function searchMerchants(q) {
     const s = q.trim().toLowerCase();

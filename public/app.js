@@ -16,6 +16,7 @@
   if (!settings.stmt) settings.stmt = {};
   if (!settings.ffp) settings.ffp = "KrisFlyer";
   if (settings.showAll === undefined) settings.showAll = false;
+  if (settings.notifyCaps === undefined) settings.notifyCaps = false;
   var oldMode = load("mode", null);
   var state = { mode: MODE_IDS.indexOf(settings.mode) >= 0 ? settings.mode : (oldMode === "online" ? "online" : "wallet"), tags: [], merchant: null };
   var log = load("mm.log", []).filter(function (e) { return e && e.date && (Date.now() - new Date(e.date).getTime()) < 100 * 864e5; });
@@ -140,7 +141,7 @@
       var bestHeld = heldRows.reduce(function (m, x) { return Math.max(m, x.q.miles); }, 0);
       if (heldRows.length) {
         var better = all.filter(function (x) { return !settings.held[x.r.id] && x.q.miles > bestHeld + 0.01; }).sort(function (a, b) { return b.q.miles - a.q.miles; }).slice(0, 3);
-        if (better.length) extra += '<li class="callout">Better card you don\'t use: ' + better.map(function (x) { return esc(x.r.card) + " would earn " + grp(x.q.miles) + " miles (" + fmt(x.q.eff) + " mpd)"; }).join("; ") + ".</li>";
+        if (better.length) extra += '<li class="callout">Better card you don\'t use: ' + better.map(function (x) { return esc(x.r.card) + applyLink(x.r.id) + " would earn " + grp(x.q.miles) + " miles (" + fmt(x.q.eff) + " mpd)"; }).join("; ") + ".</li>";
         var plan = M.splitPlan(amt, heldRows.map(function (x) { return splitCard(x.r); }));
         if (plan.better) extra += '<li class="callout">' + esc(plan.text) + " (" + grp(plan.miles) + " miles vs " + grp(plan.singleMiles) + " on one card).</li>";
       }
@@ -163,7 +164,7 @@
           '<div class="how">' + esc(r.how) + "</div>" +
           '<div class="meta">Cap: ' + esc(r.cap || "—") + "</div>" +
           (r.note || r.flag ? '<div class="meta note' + (r.flag ? " amb" : "") + '">' + (r.flag ? '<span class="flag">unverified</span>' : "") + esc(r.note) + "</div>" : "") + kf +
-          (held && metaOf(r.id) ? '<button class="logbtn" data-id="' + esc(r.id) + '" data-bucket="' + esc(r.mpd > r.base ? r.bucket : "") + '" data-mcc="' + (n || "") + '">Log spend</button>' : "") + "</li>";
+          (held && metaOf(r.id) ? '<button class="logbtn" data-id="' + esc(r.id) + '" data-bucket="' + esc(r.mpd > r.base ? r.bucket : "") + '" data-mcc="' + (n || "") + '">Log spend</button>' : "") + applyLink(r.id) + "</li>";
       }
       var ev = x.ev, k = M.kind(r), eff = ev.eff;
       var cls0 = eff >= 3 ? "bonus" : eff === 0 ? "none" : eff >= 1 ? "mid" : "";
@@ -174,10 +175,45 @@
         (ev.capLine ? '<div class="meta">' + esc(ev.capLine) + "</div>" : "") +
         (ev.warn ? '<div class="meta warn">⚠ ' + esc(ev.warn) + "</div>" : "") +
         (r.note || r.flag ? '<div class="meta note' + (r.flag ? " amb" : "") + '">' + (r.flag ? '<span class="flag">unverified</span>' : "") + esc(r.note) + "</div>" : "") + kf +
-        (held && metaOf(r.id) ? '<button class="logbtn" data-id="' + esc(r.id) + '" data-bucket="' + esc(r.mpd > r.base ? r.bucket : "") + '" data-mcc="' + (n || "") + '">Log spend</button>' : "") + "</li>";
+        (held && metaOf(r.id) ? '<button class="logbtn" data-id="' + esc(r.id) + '" data-bucket="' + esc(r.mpd > r.base ? r.bucket : "") + '" data-mcc="' + (n || "") + '">Log spend</button>' : "") + applyLink(r.id) + "</li>";
     }).join("");
     try { history.replaceState(null, "", "#" + (code || "0") + "/" + state.mode); } catch (e) {}
   }
+
+  function applyLink(id) {
+    var ref = M.referralFor(id);
+    if (!ref.url) return "";
+    return ' <a class="apply" href="' + esc(ref.url) + '" target="_blank" rel="noopener sponsored">' + esc(ref.label) + '</a> <span class="disclosure">' + esc(ref.disclosure) + "</span>";
+  }
+  var liveBanners = [];
+  function renderBanners() {
+    var el = $("banners");
+    if (!el) return;
+    el.innerHTML = liveBanners.map(function (b) { return '<div class="banner"><span>' + esc(b.text) + '</span><button type="button" data-dismiss="' + esc(b.key) + '" aria-label="Dismiss">✕</button></div>'; }).join("");
+  }
+  function raiseCapAlerts(entry) {
+    var meta = metaOf(entry.card), bucket = entry.bucket || "";
+    if (!meta || !bucket || !meta.caps[bucket] || !inCycle(entry, cycle(entry.card))) return;
+    var cap = meta.caps[bucket], after = used(entry.card, bucket), before = after - entry.amt;
+    var seen = load("mm.capAlerts", []);
+    if (!Array.isArray(seen)) seen = [];
+    var hit = M.capAlertsToFire({ cardId: entry.card, bucket: bucket, cycleKey: iso(cycle(entry.card).start), beforeUsed: before, afterUsed: after, cap: cap, seen: seen });
+    if (!hit.keys.length) return;
+    hit.keys.forEach(function (k) { seen.push(k); });
+    save("mm.capAlerts", seen);
+    hit.keys.forEach(function (k, i) {
+      var text = cardName(entry.card) + " " + bucketLabel(bucket) + " cap is " + hit.levels[i] + "% used this cycle (" + money(after) + " of " + money(cap) + ").";
+      liveBanners.push({ key: k, text: text });
+      if (settings.notifyCaps && "serviceWorker" in navigator) {
+        navigator.serviceWorker.ready.then(function (reg) {
+          var worker = reg.active || navigator.serviceWorker.controller;
+          if (worker) worker.postMessage({ type: "cap-alert", title: "MileKaki cap " + hit.levels[i] + "%", body: text });
+        }).catch(function () {});
+      }
+    });
+    renderBanners();
+  }
+  function recordSpend(entry) { log.push(entry); raiseCapAlerts(entry); persist(); renderAll(); }
 
   function search() {
     var q = kw.value.trim().toLowerCase(), ul = $("kwres");
@@ -207,8 +243,8 @@
     var amt = parseFloat(amtIn.value);
     if (!(amt > 0)) { var a = window.prompt("Amount spent (S$) on " + cardName(b.dataset.id) + "?"); amt = parseFloat(a); }
     if (!(amt > 0)) return;
-    log.push({ id: Date.now() + Math.random().toString(36).slice(2, 6), card: b.dataset.id, amt: amt, date: iso(new Date()), mcc: b.dataset.mcc || "", bucket: b.dataset.bucket || "" });
-    persist(); renderAll(); b.textContent = "Logged ✓";
+    recordSpend({ id: Date.now() + Math.random().toString(36).slice(2, 6), card: b.dataset.id, amt: amt, date: iso(new Date()), mcc: b.dataset.mcc || "", bucket: b.dataset.bucket || "" });
+    b.textContent = "Logged ✓";
   });
 
   // ----- tracker -----
@@ -248,8 +284,8 @@
   });
   $("f-add").addEventListener("click", function () {
     var amt = parseFloat($("f-amt").value); if (!(amt > 0)) { $("f-amt").focus(); return; }
-    log.push({ id: Date.now() + Math.random().toString(36).slice(2, 6), card: $("f-card").value, amt: amt, date: $("f-date").value || iso(new Date()), mcc: $("f-mcc").value.replace(/\D/g, ""), bucket: $("f-bucket").value });
-    $("f-amt").value = ""; $("f-mcc").value = ""; persist(); renderAll();
+    recordSpend({ id: Date.now() + Math.random().toString(36).slice(2, 6), card: $("f-card").value, amt: amt, date: $("f-date").value || iso(new Date()), mcc: $("f-mcc").value.replace(/\D/g, ""), bucket: $("f-bucket").value });
+    $("f-amt").value = ""; $("f-mcc").value = "";
   });
   $("log").addEventListener("click", function (e) { var b = e.target.closest("button[data-del]"); if (!b) return; log = log.filter(function (x) { return x.id !== b.dataset.del; }); persist(); renderAll(); });
 
@@ -263,11 +299,26 @@
     var st = M.META.filter(function (m) { return m.cycle === "stmt" && settings.held[m.id] && m.id !== "citiamaze"; });
     $("stmt").innerHTML = st.map(function (m) { return '<label class="stl">' + esc(m.name) + ' <input type="number" min="1" max="31" inputmode="numeric" data-stmt="' + m.group + '" value="' + esc(settings.stmt[m.group] || "") + '" placeholder="day"></label>'; }).join("") || '<p class="hint">None of your held cards uses a statement-month cap.</p>';
     $("ffp").value = settings.ffp;
+    if ($("notify")) $("notify").checked = !!settings.notifyCaps;
   }
   $("held").addEventListener("change", function (e) { var id = e.target.dataset.held; if (!id) return; settings.held[id] = e.target.checked; persist(); renderAll(); });
   ["ls1", "ls2"].forEach(function (k, i) { $(k).addEventListener("change", function () { var v = $(k).value, other = settings.ls[1 - i]; if (v === other) { alert("Pick two different categories."); $(k).value = settings.ls[i]; return; } settings.ls[i] = v; persist(); renderAll(); }); });
   $("stmt").addEventListener("input", function (e) { var g = e.target.dataset.stmt; if (!g) return; var v = parseInt(e.target.value, 10); if (v >= 1 && v <= 31) settings.stmt[g] = v; else delete settings.stmt[g]; persist(); renderLookup(); renderTrack(); });
   $("ffp").addEventListener("change", function () { settings.ffp = $("ffp").value; persist(); renderLookup(); });
+  $("notify").addEventListener("change", function (e) {
+    if (!e.target.checked) { settings.notifyCaps = false; persist(); return; }
+    if (!("Notification" in window)) { e.target.checked = false; settings.notifyCaps = false; persist(); return; }
+    Notification.requestPermission().then(function (perm) {
+      settings.notifyCaps = perm === "granted";
+      e.target.checked = settings.notifyCaps;
+      persist();
+    });
+  });
+  $("banners").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-dismiss]"); if (!b) return;
+    liveBanners = liveBanners.filter(function (x) { return x.key !== b.dataset.dismiss; });
+    renderBanners();
+  });
   $("reset").addEventListener("click", function () { if (confirm("Clear all logged spend?")) { log = []; persist(); renderAll(); } });
 
   // ----- added cards -----

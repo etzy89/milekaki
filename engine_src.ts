@@ -298,7 +298,7 @@ function rXL(n: number, m: Mode): Res {
 
 // ----- Cards added from MileLion's "What card do I use for..." guide (updated 8 Oct 2026) -----
 type Bonus = { mcc?: string; tags?: string[]; modes?: Mode[]; mpd: number; bucket?: string; how: string; flag?: boolean };
-type Added = { id: string; name: string; bank: string; local: number | null; fcy: number | null; bonuses: Bonus[]; bills: { [k: string]: number }; cap: string; note: string; src: string };
+type Added = { id: string; name: string; bank: string; local: number | null; fcy: number | null; bonuses: Bonus[]; bills: { [k: string]: number }; cap: string; note: string; src: string; referralUrl?: string; referralLabel?: string; disclosure?: string };
 const STORE: Mode[] = ["tap", "chip", "wallet"];
 const FCYM: Mode[] = ["fcy", "fcyon"];
 const SIA = ["sia", "scoot"];
@@ -657,6 +657,46 @@ function splitPlan(amount: number, cards: SplitCard[]): SplitPlan {
   return { better, miles, singleMiles, text, legs };
 }
 
+// Apply-link slots. Leave url empty and the app shows nothing.
+// Set url (and optional label / disclosure) for any card id, including ADDED ids,
+// or set referralUrl / referralLabel / disclosure on an ADDED entry. Then rebuild engine_core.js.
+type CardReferral = { url?: string; label?: string; disclosure?: string };
+const REFERRALS: { [id: string]: CardReferral } = {
+  pv: { url: "" },
+  vs: { url: "" },
+  citi: { url: "" },
+  citiamaze: { url: "" },
+  dbs: { url: "" },
+  ls: { url: "" },
+  hsbc: { url: "" },
+  trust: { url: "" },
+  xl: { url: "" },
+};
+function referralFor(id: string): { url: string; label: string; disclosure: string } {
+  const added = ADDED.filter((a: Added) => a.id === id)[0];
+  const slot = REFERRALS[id] || {};
+  const url = String((added && added.referralUrl) || slot.url || "").trim();
+  const label = String((added && added.referralLabel) || slot.label || "Apply").trim() || "Apply";
+  const disclosure = String((added && added.disclosure) || slot.disclosure || "Referral link").trim() || "Referral link";
+  return { url, label, disclosure };
+}
+
+// Cap alerts: which thresholds a new logged amount crosses. Fires once per key; caller stores keys.
+function capThresholds(beforeUsed: number, afterUsed: number, cap: number): string[] {
+  if (!(cap > 0)) return [];
+  const before = (beforeUsed / cap) * 100;
+  const after = (afterUsed / cap) * 100;
+  const out: string[] = [];
+  if (before < 80 && after >= 80) out.push("80");
+  if (before < 100 && after >= 100) out.push("100");
+  return out;
+}
+function capAlertsToFire(o: { cardId: string; bucket: string; cycleKey: string; beforeUsed: number; afterUsed: number; cap: number; seen: string[] }): { levels: string[]; keys: string[] } {
+  const seen = o.seen || [];
+  const keys = capThresholds(o.beforeUsed, o.afterUsed, o.cap).map((lv: string) => [o.cardId, o.bucket, o.cycleKey, lv].join("|")).filter((k: string) => seen.indexOf(k) < 0);
+  return { levels: keys.map((k: string) => k.split("|").pop() || ""), keys };
+}
+
 function searchMerchants(q: string): Merchant[] {
   const s = q.trim().toLowerCase();
   if (s.length < 2) return [];
@@ -664,5 +704,5 @@ function searchMerchants(q: string): Merchant[] {
 }
 // ===== END APP DATA =====
 
-export { ROWS, CARDS, SUMMARY, GROUPS, MODES, LS_CATS, ADDED, META, MERCHANTS, lookup, lookupAll, kind, searchMerchants, blockOf, quoteEarn, splitPlan };
+export { ROWS, CARDS, SUMMARY, GROUPS, MODES, LS_CATS, ADDED, META, MERCHANTS, REFERRALS, lookup, lookupAll, kind, searchMerchants, blockOf, quoteEarn, splitPlan, referralFor, capThresholds, capAlertsToFire };
 export type { Mode, Res, Opts, Merchant, Meta, Added, Quote, QuoteIn, SplitPlan, SplitCard };
