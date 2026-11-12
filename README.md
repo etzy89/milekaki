@@ -33,4 +33,4 @@ TODO: Ernest must create the GoatCounter site `milekaki` at https://www.goatcoun
 
 ## Reconcile
 
-The Reconcile tab reads a statement on this device only: CSV, pasted text, a PDF via the vendored pdf.js build in `public/vendor/pdfjs/`, or a row you type. Nothing is stored unless you choose "Save these into the Caps log". Delete statement clears the on-screen copy. Your statement never leaves your phone.
+The Reconcile tab reads a statement on this device only: CSV, pasted text, a PDF via the vendored pdf.js build in `public/vendor/pdfjs/`, or a row you type. Nothing is stored unless you choose "Save these into the Caps log". Delete statement clears the on-screen copy. Your statement never leaves your device.

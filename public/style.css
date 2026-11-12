@@ -45,6 +45,8 @@ a{color:var(--b)}
 .tabs button{background:none;border:1px solid var(--line);color:var(--mut);border-radius:999px;padding:6px 10px;font-size:13px;font-weight:600}
 .tabs button[aria-selected=true]{background:var(--acc);border-color:var(--acc);color:#fff}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.row2>*,.form>*{min-width:0}
+input,select,textarea{max-width:100%}
 #amt,.form input,.form select,select,.stl input{width:100%;font-size:16px;padding:10px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--tx)}
 #amt{height:72px;font-size:22px;text-align:center}
 .chk{display:flex;align-items:center;gap:8px;font-size:14px;margin:6px 2px 10px;color:var(--tx)}
@@ -71,6 +73,36 @@ textarea,input[type=file],input[type=month]{width:100%;font-size:16px;padding:10
 .recon th,.recon td{text-align:left;padding:6px 4px;border-bottom:1px solid var(--line);vertical-align:top}
 .recon input,.recon select{width:100%;font-size:13px;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--tx)}
 #rec-save,#rec-clear,#rec-gap,#rec-map-apply,#rec-add{margin-top:8px}
+#rec-txns,#rec-out{overflow-x:auto;max-width:100%}
+button,a,input,select,textarea{scroll-margin:8px}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.tabs button:hover:not([aria-selected=true]),.modes button:hover,.logbtn:hover{border-color:var(--b);color:var(--tx)}
+.primary:hover{filter:brightness(1.12)}
+.kwres button:hover{background:#243044}
+@media (max-width:719px){
+  .recon{min-width:560px}
+}
+@media (min-width:768px){
+  .top,main,.banners{max-width:1120px}
+  .top{margin:0 auto;padding:16px 28px 12px;border-bottom:1px solid var(--line);align-items:center}
+  main{padding:8px 28px 40px}
+  .banners{padding:12px 28px 0}
+  h1{font-size:26px}
+  .tabs{flex:1;justify-content:flex-end;gap:8px}
+  .tabs button{padding:8px 16px;font-size:15px}
+  #tab-lookup{display:grid;grid-template-columns:minmax(300px,420px) minmax(0,1fr);column-gap:28px;align-items:start}
+  #tab-lookup .lookup-side{grid-column:1}
+  #tab-lookup .results{grid-column:2;grid-row:1}
+  #caps{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start}
+  .held{column-count:2;column-gap:28px}
+  .held h3,.held .chk{break-inside:avoid}
+  .recon{font-size:14px}
+  .recon th,.recon td{padding:8px 10px}
+}
+@media (min-width:1280px){
+  .held{column-count:3}
+  .modes{grid-template-columns:repeat(3,1fr)}
+}
 .capcard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px}
 .bar{margin-top:8px}
 .barl{display:flex;justify-content:space-between;font-size:12px;color:var(--mut)}

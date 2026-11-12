@@ -60,17 +60,7 @@ for (const n of codes) {
 <meta name="twitter:title" content="MCC ${code}: ${esc(desc)}">
 <meta name="twitter:description" content="Bonus and base miles rates for MCC ${code}.">
 <meta name="theme-color" content="#0f172a">
-<style>
-body{margin:0;background:#0f172a;color:#e2e8f0;font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
-main{max-width:720px;margin:0 auto;padding:24px 16px 48px}
-a{color:#38bdf8}
-h1{font-size:22px;margin:0 0 8px}
-p,li{color:#94a3b8}
-table{width:100%;border-collapse:collapse;font-size:14px}
-th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #334155}
-th{color:#94a3b8;font-weight:600}
-.bonus{color:#22c55e}
-</style>
+<link rel="stylesheet" href="../mcc.css">
 </head>
 <body>
 <main>
@@ -80,10 +70,10 @@ th{color:#94a3b8;font-weight:600}
 ${merchants.length ? "<h2>Example merchants</h2><p>" + esc(merchants.join(", ")) + "</p>" : ""}
 <h2>Miles cards</h2>
 <p>Contactless card and online SGD, before your personal caps. Bonus means the headline rate is above that card's base rate.</p>
-<table>
+<div class="scroll"><table>
 <thead><tr><th>Card</th><th>Contactless</th><th>Online SGD</th></tr></thead>
 <tbody>${table}</tbody>
-</table>
+</table></div>
 <p>Personal reference, not financial advice. No cookies; anonymous page counts; your card data stays on your device.</p>
 </main>
 <script data-goatcounter="https://milekaki.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
