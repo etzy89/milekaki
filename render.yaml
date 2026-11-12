@@ -1,0 +1,13 @@
+services:
+  - type: web
+    runtime: static
+    name: mcc-miles
+    buildCommand: "echo static"
+    staticPublishPath: ./public
+    headers:
+      - path: /*
+        name: X-Robots-Tag
+        value: noindex, nofollow, noarchive
+      - path: /sw.js
+        name: Cache-Control
+        value: no-cache
