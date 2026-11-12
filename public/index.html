@@ -9,9 +9,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="MCC Miles">
+<meta name="apple-mobile-web-app-title" content="MaxiMile">
 <meta name="format-detection" content="telephone=no">
-<title>MCC Miles</title>
+<title>MaxiMile</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icons/icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -19,36 +19,82 @@
 </head>
 <body>
 <header class="top">
-  <h1>MCC Miles</h1>
-  <span class="asof">Data as of Nov 2026</span>
+  <h1>MaxiMile</h1>
+  <nav class="tabs" role="tablist">
+    <button data-tab="lookup" aria-selected="true">Lookup</button>
+    <button data-tab="track">Caps</button>
+    <button data-tab="settings">Settings</button>
+    <button data-tab="cards">Cards</button>
+  </nav>
 </header>
 <main>
-  <section class="lookup">
-    <label for="mcc" class="lbl">Merchant category code</label>
-    <input id="mcc" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" placeholder="5812" aria-describedby="ctx">
-    <div id="ctx" class="ctx"></div>
-    <div class="modes" role="radiogroup" aria-label="Payment mode">
-      <button data-mode="store" role="radio">In-store<br><small>SGD</small></button>
-      <button data-mode="online" role="radio">Online<br><small>SGD</small></button>
-      <button data-mode="fcy" role="radio">Overseas<br><small>in-store FCY</small></button>
-      <button data-mode="fcyon" role="radio">Online<br><small>FCY</small></button>
+  <section id="tab-lookup" class="tab">
+    <div class="row2">
+      <div>
+        <label for="mcc" class="lbl">MCC</label>
+        <input id="mcc" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" placeholder="5812">
+      </div>
+      <div>
+        <label for="amt" class="lbl">Amount S$ (optional)</label>
+        <input id="amt" type="text" inputmode="decimal" autocomplete="off" placeholder="e.g. 120">
+      </div>
     </div>
-  </section>
-  <ol id="results" class="results" aria-live="polite"></ol>
-
-  <section class="search">
-    <label for="kw" class="lbl">Don't know the code? Search a spend type</label>
-    <input id="kw" type="search" placeholder="e.g. supermarket, hotel, grab, kris+" autocomplete="off">
+    <label for="kw" class="lbl">Or search a merchant / spend type</label>
+    <input id="kw" type="search" placeholder="e.g. FairPrice, Grab, Agoda, Kris+" autocomplete="off">
     <ul id="kwres" class="kwres"></ul>
+    <div id="ctx" class="ctx"></div>
+    <div class="modes" role="radiogroup" aria-label="Payment mode"></div>
+    <label class="chk"><input type="checkbox" id="showall"> Show cards I don't hold</label>
+    <ol id="results" class="results" aria-live="polite"></ol>
+  </section>
+
+  <section id="tab-track" class="tab" hidden>
+    <h2>Add spend</h2>
+    <div class="form">
+      <select id="f-card" aria-label="Card"></select>
+      <input id="f-amt" type="text" inputmode="decimal" placeholder="Amount S$" aria-label="Amount">
+      <input id="f-mcc" type="text" inputmode="numeric" maxlength="4" placeholder="MCC (optional)" aria-label="MCC">
+      <select id="f-bucket" aria-label="Bonus bucket"></select>
+      <input id="f-date" type="date" aria-label="Date">
+      <button id="f-add" class="primary">Add</button>
+    </div>
+    <p class="hint">With an MCC, the bonus bucket is worked out for the current payment mode on the Lookup tab. Spend resets automatically each card's cycle (calendar or statement month).</p>
+    <h2>This cycle</h2>
+    <div id="caps"></div>
+    <h2>Entries</h2>
+    <ul id="log" class="log"></ul>
+  </section>
+
+  <section id="tab-settings" class="tab" hidden>
+    <h2>Cards I hold</h2>
+    <div id="held" class="held"></div>
+    <h2>UOB Lady's Solitaire categories</h2>
+    <div class="row2"><select id="ls1" aria-label="Category 1"></select><select id="ls2" aria-label="Category 2"></select></div>
+    <h2>Statement dates</h2>
+    <p class="hint">Day of month your statement is generated. Used for cards whose bonus cap runs by statement month. Left blank, the calendar month is used.</p>
+    <div id="stmt"></div>
+    <h2>Preferred frequent-flyer programme</h2>
+    <select id="ffp" aria-label="Preferred FFP">
+      <option value="KrisFlyer">KrisFlyer (show KrisFlyer-specific rates in notes)</option>
+      <option value="Other">Other / best partner (hide KrisFlyer notes)</option>
+    </select>
+    <h2>Data</h2>
+    <button id="reset">Clear spend log</button>
+  </section>
+
+  <section id="tab-cards" class="tab" hidden>
+    <h2>Cards added from MileLion's guide</h2>
+    <p class="hint">Rates from The MileLion's "What card do I use for…" guide (updated 8 Oct 2026) and the linked reviews. Issuer T&amp;Cs for these cards were not individually checked. Hidden from the ranking unless marked as held or "Show cards I don't hold" is on.</p>
+    <div id="addedlist"></div>
   </section>
 
   <details class="about">
     <summary>How to read this &amp; sources</summary>
-    <p>Rates are miles per S$1 (mpd) at each card's standard airline-partner rate. Where KrisFlyer converts worse, the note says so (HSBC Revolution: 4 mpd, KrisFlyer 3.33 mpd at 30,000:10,000 since 16 Jan 2025). <span class="flag">unverified</span> marks rules inferred from category wording or reported by MileLion rather than spelled out in the bank's T&amp;Cs. If an MCC isn't in a card's lists, the card's general rule applies. Caps, minimum spends and FX fees are shown per card. Always check the merchant's actual MCC (e.g. HeyMax or your bank app).</p>
-    <p><a href="https://cursor.com/canvas/store-7d14d515-1c8f-4041-8bf2-388cd7a000b8/8278639e-ba46-4b2e-a2e9-7ef92d535ed1" target="_blank" rel="noopener">Full MCC bonus map (Grok Page)</a></p>
+    <p>mpd = miles per S$1 at each card's standard airline-partner rate (HSBC: 4 mpd; KrisFlyer converts at 30,000:10,000 since 16 Jan 2025, so 3.33 – shown in notes). "Effective" mpd accounts for your logged spend: a card whose bonus cap is used up, or whose minimum spend looks out of reach, drops to its base rate and moves down. <span class="flag">unverified</span> marks rules not confirmed by the bank or MileLion. FCY in-store assumes a contactless tap (phone wallet for UOB PV). In-app Apple/Google Pay = Online.</p>
+    <p><a href="https://cursor.com/canvas/store-7d14d515-1c8f-4041-8bf2-388cd7a000b8/8278639e-ba46-4b2e-a2e9-7ef92d535ed1" target="_blank" rel="noopener">Full MCC bonus map (Grok Page)</a> · <a href="https://milelion.com/credit-cards/guide/" target="_blank" rel="noopener">MileLion guide</a></p>
     <ul id="sources" class="sources"></ul>
   </details>
-  <p class="foot">Personal reference, not financial advice. Data as of Nov 2026. Works offline.</p>
+  <p class="foot">Personal reference, not financial advice. Data as of Nov 2026. Everything stays on this device. Works offline.</p>
 </main>
 <script src="engine_core.js"></script>
 <script src="app.js"></script>
