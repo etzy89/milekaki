@@ -1,7 +1,7 @@
 services:
   - type: web
     runtime: static
-    name: mileonaire
+    name: cardsmith
     buildCommand: "echo static"
     staticPublishPath: ./public
     headers:
