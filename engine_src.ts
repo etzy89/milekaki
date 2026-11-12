@@ -73,6 +73,8 @@ const ROWS: Row[] = [
   { m: "AMAZE*", d: "Spend routed through Instarem Amaze", g: "Channels", v: ["xAMAZE* excluded", "xAMAZE* excluded", "~See Citi+Amaze", "+except travel, transit, AXS", "xAMAZE excluded", "xAMAZE* excluded", "~n/a (Visa)", "~n/a (Visa)", "?INSTAREM excluded; MileLion says works"] },
   { m: "In-app wallet", d: "Apple/Google Pay inside an app or website", g: "Channels", v: ["+if whitelisted MCC (counts as online)", "~Base (online SGD)", "~Base (in-app wallet excl.)", "~n/a", "+online", "+if chosen-category MCC", "+if whitelisted MCC", T13, "+if whitelisted MCC†"] },
   { m: "Card tap", d: "Tapping the physical card in store", g: "Channels", v: ["~Base (needs phone wallet)", "+†", "~Base unless fashion MCC", "~n/a", B, "+if chosen-category MCC", "+if whitelisted MCC", T13, "+if whitelisted MCC†"] },
+  { m: "Kris+", d: "Paying in the Kris+ app (MCC depends on the merchant)", g: "Channels", v: ["~MCC-dependent", "~MCC-dependent", "~No bonus (Citi alone)", "+4 mpd (1% fee)", "+4 mpd (in-app = online)", "~MCC-dependent", "~MCC-dependent", "~MCC-dependent", "~MCC-dependent"] },
+  { m: "Atome", d: "Atome pay-later (MCC depends on the merchant)", g: "Channels", v: ["~MCC-dependent", "~MCC-dependent", "+4 mpd", "~n/a", "+4 mpd", "~MCC-dependent", "+4 mpd (KrisFlyer 3.33)", "~MCC-dependent", "~MCC-dependent"] },
   { m: "Recurring", d: "Subscriptions, card-on-file", g: "Channels", v: ["~Base (recurring excl. from online bonus)", B, "+online", "+1% fee", "+online", "~MCC-based", "+card-on-file counts if MCC listed", "?Recurring wording unclear", "~MCC-based"] },
 ];
 
@@ -108,7 +110,7 @@ const SUMMARY: TableCell[][] = [
   ["Citi Rewards Mastercard", "4 mpd", "Online (not travel, not in-app wallet) or fashion MCCs in any channel", "S$1,000 per statement month", "None", "Per S$1, per transaction"],
   ["DBS Woman's World", "4 mpd online; 1.2 mpd FCY offline", "Any online spend (blacklist approach)", "S$1,000 online per calendar month (transaction date)", "None", "Amount ÷ 5, rounded down (no S$5 blocks)"],
   ["UOB Lady's Solitaire", "4 mpd", "MCCs in your 2 chosen categories (Dining, Travel)", "S$750 per category, per calendar month", "None", "UNI$ per S$5"],
-  ["HSBC Revolution", "4 mpd (3.33 into KrisFlyer); 8 mpd with S$50k EGA", "Contactless or online and a whitelisted MCC", "S$1,000 per calendar month (S$1,200 at 8 mpd)", "None", "Monthly total, rounded down to S$1"],
+  ["HSBC Revolution", "4 mpd; KrisFlyer: 3.33 mpd (30,000:10,000 since 16 Jan 2025); 8 mpd with S$50k EGA", "Contactless or online and a whitelisted MCC", "S$1,000 per calendar month (S$1,200 at 8 mpd)", "None", "Monthly total, rounded down to S$1"],
   ["Trust Freedom (Miles mode)", "1.3 mpd flat, 0% FX fee", "Everything not excluded", "No cap", "None", "S$5 blocks (per MileLion)"],
   ["Maybank XL Rewards", "4 mpd", "Whitelisted Dine/Shop/Travel/Play MCCs, plus all FCY spend", "S$1,000 per calendar month", "S$500 eligible spend per calendar month", "S$5 blocks per transaction (T&C)"],
 ];
@@ -176,12 +178,14 @@ function rCiti(n: number, m: Mode, amaze: boolean): Res {
   if (CITI_TRAVEL(n)) return { card, mpd: 0.4, how: "Travel MCC: never gets the bonus", cap: "—", note: amaze ? "Amaze doesn't change the MCC" : "", flag: false };
   const u = n === 7399;
   const uNote = "7399 isn't excluded, but the bonus is unconfirmed";
+  const rb = n === 4814 || n === 4899;
+  const rbNote = "Pay one-off online or in-app; recurring card-on-file billing earns nothing";
   if (amaze) {
     const fee = m === "store" || m === "online" ? "Amaze 1% fee on SGD (min. S$0.50)" : "Amaze ~2% FX spread instead of 3.25%";
-    return { card, mpd: 4, how: "Pay with Amaze linked to Citi Rewards Mastercard (codes as online)", cap, note: u ? `${uNote}. ${fee}` : fee, flag: u };
+    return { card, mpd: 4, how: "Pay with Amaze linked to Citi Rewards Mastercard (codes as online)", cap, note: `${u ? uNote + ". " : ""}${rb ? rbNote + ". " : ""}Use the physical Amaze card; Amaze added to Apple/Google Pay may lose the bonus (MileLion reading, not explicit in Citi T&Cs). ${fee}`, flag: true };
   }
   if (CITI_FASHION(n)) return { card, mpd: 4, how: "Fashion MCC: any channel", cap, note: "", flag: false };
-  if (m === "online" || m === "fcyon") return { card, mpd: 4, how: "Online, not via in-app Apple/Google Pay", cap, note: u ? uNote : "General rule: any online spend that isn't travel or excluded", flag: u };
+  if (m === "online" || m === "fcyon") return { card, mpd: 4, how: "Online, not via in-app Apple/Google Pay", cap, note: u ? uNote : rb ? rbNote : "General rule: any online spend that isn't travel or excluded", flag: u };
   return { card, mpd: 0.4, how: "In-store, not a fashion MCC: base", cap: "—", note: "Pay via Amaze for 4 mpd", flag: false };
 }
 
@@ -191,7 +195,8 @@ function rDBS(n: number, m: Mode): Res {
   if (DBS_X(n)) return { card, mpd: 0, how: NONE, cap: "—", note: "On DBS's exclusion list", flag: false };
   if (m === "online" || m === "fcyon") {
     if (DBS_ONX(n)) return { card, mpd: m === "online" ? 0.4 : 1.2, how: "MCC excluded from the online bonus", cap: "—", note: "Listed in the 5 Nov 2026 T&Cs", flag: false };
-    return { card, mpd: 4, how: "Any online transaction (not phone/mail order)", cap, note: m === "fcyon" ? "3.25% FX fee" : "General rule: blacklist card, so any MCC that isn't excluded", flag: false };
+    const rb = n === 4814 || n === 4899 ? "Pay one-off online or in-app; recurring card-on-file billing earns nothing. " : "";
+    return { card, mpd: 4, how: "Any online transaction (not phone/mail order)", cap, note: rb + (m === "fcyon" ? "3.25% FX fee" : "General rule: blacklist card, so any MCC that isn't excluded"), flag: false };
   }
   if (m === "fcy") return { card, mpd: 1.2, how: "Overseas in-store FCY: 3X", cap: "—", note: "3.25% FX fee", flag: false };
   return { card, mpd: 0.4, how: "In-store, even with a phone tap: base", cap: "—", note: n === 4111 ? "SimplyGo treatment unverified" : "", flag: n === 4111 };
@@ -213,9 +218,9 @@ function rHSBC(n: number, m: Mode): Res {
   if (HSBC_WL(n)) {
     const how = m === "store" || m === "fcy" ? "Contactless tap (card or phone), MCC on the whitelist" : "Online (incl. card-on-file), MCC on the whitelist";
     const fx = m === "fcy" || m === "fcyon" ? "; 3.25% FX fee" : "";
-    return { card, mpd: 3.33, how, cap: "S$1,000/cal. month", note: `10X at 30k pts = 10k KrisFlyer miles; 6.67 mpd with S$50k EGA ADB (cap S$1,200)${fx}`, flag: false };
+    return { card, mpd: 4, how, cap: "S$1,000/cal. month", note: `10X = 4 mpd at 25,000:10,000 partners. KrisFlyer: 3.33 mpd (30,000:10,000 since 16 Jan 2025). 8 mpd with S$50k EGA ADB (cap S$1,200; KrisFlyer 6.67)${fx}`, flag: false };
   }
-  return { card, mpd: 0.33, how: "Not on the whitelist: base", cap: "—", note: "1 pt per S$1 = 0.33 KrisFlyer mpd", flag: false };
+  return { card, mpd: 0.4, how: "Not on the whitelist: base", cap: "—", note: "1 pt per S$1 = 0.4 mpd; KrisFlyer: 0.33 mpd (30,000:10,000 since 16 Jan 2025)", flag: false };
 }
 
 function rTrust(n: number): Res {

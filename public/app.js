@@ -20,6 +20,11 @@
     "6513": "rent rental property", "4829 6050 6051": "money transfer remittance wise quasi cash"
   };
   var ROWS = M.ROWS.filter(function (r) { return /\d{4}/.test(r.m); });
+  // Channel notes (no single MCC): shown as info entries in keyword search.
+  var CHANNELS = [
+    { k: "kris+ krisplus kris plus krispay sia app", t: "Kris+", n: "DBS WWMC 4 mpd; Citi Rewards + Amaze 4 mpd (1% fee on SGD); Citi Rewards alone: no bonus. MCC depends on the merchant." },
+    { k: "atome pay later bnpl buy now pay later", t: "Atome", n: "Citi Rewards 4 mpd; DBS WWMC 4 mpd; HSBC Revolution 4 mpd (KrisFlyer: 3.33 mpd)." }
+  ];
   var mode = localStorage.getItem("mode") || "store";
   var inp = $("mcc"), kw = $("kw");
 
@@ -52,8 +57,10 @@
     var q = kw.value.trim().toLowerCase(), ul = $("kwres");
     if (/^\d{4}$/.test(q)) { inp.value = q; render(); ul.innerHTML = ""; return; }
     if (q.length < 2) { ul.innerHTML = ""; return; }
+    var ch = CHANNELS.filter(function (c) { return (c.t + " " + c.k).toLowerCase().indexOf(q) >= 0; });
     var hits = ROWS.filter(function (r) { return (r.d + " " + r.g + " " + r.m + " " + (ALIAS[r.m] || "")).toLowerCase().indexOf(q) >= 0; }).slice(0, 12);
-    ul.innerHTML = hits.length ? hits.map(function (r) { return '<li><button data-code="' + codes(r.m)[0].slice(0, 4) + '"><b>' + esc(r.m) + "</b>" + esc(r.d) + "</button></li>"; }).join("") : '<li class="empty">No match. Try a broader word.</li>';
+    var chHtml = ch.map(function (c) { return '<li class="chan"><b>' + esc(c.t) + "</b>" + esc(c.n) + "</li>"; }).join("");
+    ul.innerHTML = chHtml + (hits.length ? hits.map(function (r) { return '<li><button data-code="' + codes(r.m)[0].slice(0, 4) + '"><b>' + esc(r.m) + "</b>" + esc(r.d) + "</button></li>"; }).join("") : (ch.length ? "" : '<li class="empty">No match. Try a broader word.</li>'));
   }
 
   document.querySelectorAll(".modes button").forEach(function (b) { b.addEventListener("click", function () { mode = b.dataset.mode; localStorage.setItem("mode", mode); render(); }); });
