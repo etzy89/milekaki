@@ -48,12 +48,17 @@ var MCCX = (() => {
     blockOf: () => blockOf,
     capAlertsToFire: () => capAlertsToFire,
     capThresholds: () => capThresholds,
+    cycleBounds: () => cycleBounds,
+    dateInCycle: () => dateInCycle,
     explainMilesGap: () => explainMilesGap,
     guessMcc: () => guessMcc,
     kind: () => kind,
     ladySettings: () => ladySettings,
     lookup: () => lookup,
     lookupAll: () => lookupAll,
+    mergeLogs: () => mergeLogs,
+    monthlySummary: () => monthlySummary,
+    parseBackup: () => parseBackup,
     parseCsv: () => parseCsv,
     parseStatementText: () => parseStatementText,
     quoteEarn: () => quoteEarn,
@@ -1104,6 +1109,137 @@ var MCCX = (() => {
       return lost(b) - lost(a);
     });
     return { expected, expectedBase, expectedBonus, credited, delta: r2(credited - expected), likely };
+  }
+  function pad2(n) {
+    return (n < 10 ? "0" : "") + n;
+  }
+  function isoDate(d) {
+    return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+  }
+  function cycleBounds(dateIso, stmtDay) {
+    const d = /* @__PURE__ */ new Date(dateIso + "T12:00:00");
+    const y = d.getFullYear(), mo = d.getMonth(), date = d.getDate();
+    if (!(stmtDay >= 1 && stmtDay <= 31)) {
+      return { start: isoDate(new Date(y, mo, 1)), end: isoDate(new Date(y, mo + 1, 0)), kind: "calendar month" };
+    }
+    const clamp = (yy, mm, dd) => new Date(yy, mm, Math.min(dd, new Date(yy, mm + 1, 0).getDate()));
+    let start, end;
+    if (date > stmtDay) {
+      start = clamp(y, mo, stmtDay);
+      start.setDate(start.getDate() + 1);
+      end = clamp(y, mo + 1, stmtDay);
+    } else {
+      start = clamp(y, mo - 1, stmtDay);
+      start.setDate(start.getDate() + 1);
+      end = clamp(y, mo, stmtDay);
+    }
+    return { start: isoDate(start), end: isoDate(end), kind: "statement month" };
+  }
+  function dateInCycle(dateIso, bounds) {
+    return dateIso >= bounds.start && dateIso <= bounds.end;
+  }
+  function monthlySummary(entries, opts) {
+    const owned = opts.owned || [];
+    const ls = opts.ls === void 0 ? ["dining", "travel"] : opts.ls;
+    const ladys = opts.ladys === void 0 ? "" : opts.ladys;
+    const sorted = (entries || []).map((e) => ({ card: e.card, amount: e.amount || e.amt || 0, date: e.date, mcc: parseInt(String(e.mcc || "0"), 10) || 0, mode: e.mode || "tap", descriptor: e.descriptor || "" })).filter((e) => e.amount > 0 && e.date).sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+    const spentAll = {};
+    const usedBucket = {};
+    const byCard = {};
+    const missedTop = [];
+    let totalMiles = 0, bonusMiles = 0, baseMiles = 0, missed = 0;
+    function score(cardId, mcc, mode, amount) {
+      const res = lookupAll(mcc, mode, { ls, ladys }).filter((r) => r.id === cardId)[0];
+      const name = res ? res.card : cardId;
+      if (!res || res.mpd === 0) return { miles: 0, bonus: 0, base: 0, bucket: "", name };
+      const meta = META.filter((m) => m.id === cardId)[0];
+      const block = blockOf(cardId);
+      const bucket = res.bucket || "";
+      const cap = meta && bucket && meta.caps[bucket] ? meta.caps[bucket] : null;
+      const priorBucket = usedBucket[cardId] && bucket ? usedBucket[cardId][bucket] || 0 : 0;
+      const q = quoteEarn({ amount, mpd: res.mpd, base: res.base, cap, used: priorBucket, spent: spentAll[cardId] || 0, min: meta ? meta.min : 0, block: block.block, blockApprox: false, blockWhy: "", rateApprox: false, capUnmodelled: false });
+      let bonus = 0, base = 0;
+      for (let i = 0; i < q.parts.length; i++) {
+        const miles = r2(q.parts[i].amt * q.parts[i].mpd);
+        if (q.parts[i].mpd > res.base) bonus += miles;
+        else base += miles;
+      }
+      return { miles: q.miles, bonus: r2(bonus), base: r2(base), bucket, name };
+    }
+    for (let i = 0; i < sorted.length; i++) {
+      const e = sorted[i];
+      const actual = score(e.card, e.mcc, e.mode, e.amount);
+      let best = actual, bestId = e.card;
+      for (let o = 0; o < owned.length; o++) {
+        const s = score(owned[o], e.mcc, e.mode, e.amount);
+        if (s.miles > best.miles + 1e-3) {
+          best = s;
+          bestId = owned[o];
+        }
+      }
+      const short = Math.max(0, r2(best.miles - actual.miles));
+      spentAll[e.card] = r2((spentAll[e.card] || 0) + e.amount);
+      if (actual.bucket && actual.bonus > 0) {
+        if (!usedBucket[e.card]) usedBucket[e.card] = {};
+        usedBucket[e.card][actual.bucket] = r2((usedBucket[e.card][actual.bucket] || 0) + e.amount);
+      }
+      const row = byCard[e.card] || (byCard[e.card] = { id: e.card, name: actual.name, bonus: 0, base: 0, total: 0, caps: [] });
+      row.bonus = r2(row.bonus + actual.bonus);
+      row.base = r2(row.base + actual.base);
+      row.total = r2(row.total + actual.miles);
+      totalMiles = r2(totalMiles + actual.miles);
+      bonusMiles = r2(bonusMiles + actual.bonus);
+      baseMiles = r2(baseMiles + actual.base);
+      missed = r2(missed + short);
+      if (short > 0) missedTop.push({ date: e.date, descriptor: e.descriptor || "MCC " + e.mcc, card: actual.name, best: best.name, actual: actual.miles, bestMiles: best.miles, shortfall: short });
+    }
+    const ids = Object.keys(byCard);
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      const meta = META.filter((m) => m.id === id)[0];
+      const buckets = usedBucket[id] || {};
+      byCard[id].caps = Object.keys(buckets).map((b) => {
+        const cap = meta && meta.caps[b] ? meta.caps[b] : 0;
+        const used = buckets[b];
+        return { bucket: b, used, cap, pct: cap ? Math.round(used / cap * 100) : 0 };
+      });
+    }
+    missedTop.sort((a, b) => b.shortfall - a.shortfall);
+    return { totalMiles, bonusMiles, baseMiles, missed, byCard, missedTop: missedTop.slice(0, 5) };
+  }
+  function parseBackup(data) {
+    let obj;
+    try {
+      obj = typeof data === "string" ? JSON.parse(data) : data;
+    } catch (e) {
+      return { ok: false, error: "File is not valid JSON." };
+    }
+    if (!obj || typeof obj !== "object" || Array.isArray(obj)) return { ok: false, error: "File is not a MileKaki backup." };
+    if (obj.app && obj.app !== "milekaki") return { ok: false, error: "This file is not a MileKaki backup." };
+    if (!obj.settings || typeof obj.settings !== "object" || Array.isArray(obj.settings)) return { ok: false, error: "Backup is missing settings." };
+    if (!Array.isArray(obj.log)) return { ok: false, error: "Backup is missing the spend log." };
+    const raw = obj.log;
+    const log = [];
+    for (let i = 0; i < raw.length; i++) {
+      const e = raw[i];
+      if (!e || typeof e !== "object" || !e.card || !e.date || typeof e.amt !== "number" || !(e.amt > 0)) continue;
+      log.push({ id: typeof e.id === "string" ? e.id : "", card: String(e.card), amt: e.amt, date: String(e.date), mcc: e.mcc ? String(e.mcc) : "", bucket: e.bucket ? String(e.bucket) : "", mode: e.mode ? String(e.mode) : "" });
+    }
+    const capAlerts = Array.isArray(obj.capAlerts) ? obj.capAlerts.filter((x) => typeof x === "string") : [];
+    return { ok: true, settings: obj.settings, log, capAlerts, reconcile: obj.reconcile == null ? null : obj.reconcile, preview: { log: log.length, dropped: raw.length - log.length, alerts: capAlerts.length, exportedAt: typeof obj.exportedAt === "string" ? obj.exportedAt : "" } };
+  }
+  function mergeLogs(current, incoming) {
+    const seen = {};
+    const out = (current || []).slice();
+    out.forEach((e) => {
+      if (e && e.id) seen[e.id] = true;
+    });
+    (incoming || []).forEach((e) => {
+      if (e && e.id && seen[e.id]) return;
+      if (e && e.id) seen[e.id] = true;
+      out.push(e);
+    });
+    return out;
   }
   function searchMerchants(q) {
     const s = q.trim().toLowerCase();

@@ -32,6 +32,7 @@
   <nav class="tabs" role="tablist">
     <button data-tab="lookup" aria-selected="true">Lookup</button>
     <button data-tab="track">Caps</button>
+    <button data-tab="summary">Summary</button>
     <button data-tab="reconcile">Reconcile</button>
     <button data-tab="settings">Settings</button>
     <button data-tab="cards">Cards</button>
@@ -76,6 +77,14 @@
     <div id="caps"></div>
     <h2>Entries</h2>
     <ul id="log" class="log"></ul>
+  </section>
+
+  <section id="tab-summary" class="tab" hidden>
+    <h2>Monthly summary</h2>
+    <label class="lbl" for="sum-month">Cycle containing</label>
+    <input id="sum-month" type="month" aria-label="Summary month">
+    <p class="hint">Each card uses its own statement day. Blank means the calendar month.</p>
+    <div id="sum-out"></div>
   </section>
 
   <section id="tab-reconcile" class="tab" hidden>
@@ -142,8 +151,8 @@
       <select id="ladys" aria-label="Lady's Card category"></select>
       <p class="hint">One category. Bonus cap S$1,000 per calendar month.</p>
     </div>
-    <h2>Statement dates</h2>
-    <p class="hint">Day of month your statement is generated. Used for cards whose bonus cap runs by statement month. Left blank, the calendar month is used.</p>
+    <h2>Statement cycle start</h2>
+    <p class="hint">Day of the month your statement is generated, per card. Leave blank to use the calendar month. The cycle runs from the day after this date through the next statement date.</p>
     <div id="stmt"></div>
     <h2>Preferred frequent-flyer programme</h2>
     <select id="ffp" aria-label="Preferred FFP">
@@ -153,6 +162,18 @@
     <h2>Cap alerts</h2>
     <label class="chk"><input type="checkbox" id="notify"> Notify me on this device when a bonus cap hits 80% or 100%</label>
     <p class="hint">A local notification only. Permission is asked when you turn this on. Nothing is sent to a server.</p>
+    <h2>Backup</h2>
+    <p id="backup-status" class="hint"></p>
+    <button id="export-data" type="button">Export data</button>
+    <label class="lbl" for="import-file">Import data</label>
+    <input id="import-file" type="file" accept="application/json,.json">
+    <div id="import-preview" class="capcard" hidden>
+      <p id="import-sum"></p>
+      <label class="chk"><input type="radio" name="logmode" value="replace" checked> Replace Caps log</label>
+      <label class="chk"><input type="radio" name="logmode" value="merge"> Merge Caps log (keep both, skip duplicate ids)</label>
+      <button id="import-go" class="primary" type="button">Confirm import</button>
+      <button id="import-cancel" type="button">Cancel</button>
+    </div>
     <h2>Data</h2>
     <button id="reset">Clear spend log</button>
   </section>

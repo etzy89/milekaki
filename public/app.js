@@ -73,19 +73,22 @@
   }
 
   // ----- cycles -----
+  function stmtDayOf(id) {
+    var raw = settings.stmt[id];
+    if (raw == null || raw === "") raw = settings.stmt[groupOf(id)];
+    var day = parseInt(raw, 10);
+    return day >= 1 && day <= 31 ? day : 0;
+  }
   function cycle(id, today) {
     today = today || new Date();
-    var meta = metaOf(id), g = groupOf(id), y = today.getFullYear(), mo = today.getMonth(), start, end;
-    var day = meta && meta.cycle === "stmt" ? parseInt(settings.stmt[g], 10) : NaN;
-    if (day >= 1 && day <= 31) {
-      var clamp = function (yy, mm, dd) { return new Date(yy, mm, Math.min(dd, new Date(yy, mm + 1, 0).getDate())); };
-      if (today.getDate() > day) { start = clamp(y, mo, day); start.setDate(start.getDate() + 1); end = clamp(y, mo + 1, day); }
-      else { start = clamp(y, mo - 1, day); start.setDate(start.getDate() + 1); end = clamp(y, mo, day); }
-      return { start: start, end: end, kind: "statement month" };
-    }
-    return { start: new Date(y, mo, 1), end: new Date(y, mo + 1, 0), kind: meta && meta.cycle === "stmt" ? "statement month (date not set: using calendar month)" : "calendar month" };
+    var b = M.cycleBounds(iso(today), stmtDayOf(id));
+    return { start: new Date(b.start + "T12:00:00"), end: new Date(b.end + "T12:00:00"), kind: b.kind };
   }
-  function inCycle(e, cyc) { var d = new Date(e.date + "T12:00:00"); return d >= cyc.start && d <= new Date(cyc.end.getTime() + 864e5 - 1); }
+  function inCycle(e, cyc) {
+    var s = cyc.start instanceof Date ? iso(cyc.start) : cyc.start;
+    var en = cyc.end instanceof Date ? iso(cyc.end) : cyc.end;
+    return e.date >= s && e.date <= en;
+  }
   function entriesFor(g, cyc) { return log.filter(function (e) { return groupOf(e.card) === g && inCycle(e, cyc); }); }
   function used(id, bucket) { var g = groupOf(id), cyc = cycle(id); return entriesFor(g, cyc).filter(function (e) { return e.bucket === bucket; }).reduce(function (s, e) { return s + e.amt; }, 0); }
   function spent(id, bucket) { var g = groupOf(id), cyc = cycle(id); return entriesFor(g, cyc).filter(function (e) { return !bucket || e.bucket === bucket; }).reduce(function (s, e) { return s + e.amt; }, 0); }
@@ -251,7 +254,7 @@
     var amt = parseFloat(amtIn.value);
     if (!(amt > 0)) { var a = window.prompt("Amount spent (S$) on " + cardName(b.dataset.id) + "?"); amt = parseFloat(a); }
     if (!(amt > 0)) return;
-    recordSpend({ id: Date.now() + Math.random().toString(36).slice(2, 6), card: b.dataset.id, amt: amt, date: iso(new Date()), mcc: b.dataset.mcc || "", bucket: b.dataset.bucket || "" });
+    recordSpend({ id: Date.now() + Math.random().toString(36).slice(2, 6), card: b.dataset.id, amt: amt, date: iso(new Date()), mcc: b.dataset.mcc || "", bucket: b.dataset.bucket || "", mode: state.mode });
     b.textContent = "Logged ✓";
   });
 
@@ -292,7 +295,7 @@
   });
   $("f-add").addEventListener("click", function () {
     var amt = parseFloat($("f-amt").value); if (!(amt > 0)) { $("f-amt").focus(); return; }
-    recordSpend({ id: Date.now() + Math.random().toString(36).slice(2, 6), card: $("f-card").value, amt: amt, date: $("f-date").value || iso(new Date()), mcc: $("f-mcc").value.replace(/\D/g, ""), bucket: $("f-bucket").value });
+    recordSpend({ id: Date.now() + Math.random().toString(36).slice(2, 6), card: $("f-card").value, amt: amt, date: $("f-date").value || iso(new Date()), mcc: $("f-mcc").value.replace(/\D/g, ""), bucket: $("f-bucket").value, mode: state.mode });
     $("f-amt").value = ""; $("f-mcc").value = "";
   });
   $("log").addEventListener("click", function (e) { var b = e.target.closest("button[data-del]"); if (!b) return; log = log.filter(function (x) { return x.id !== b.dataset.del; }); persist(); renderAll(); });
@@ -308,8 +311,15 @@
     $("ladys-block").hidden = !showLady;
     if (showLs) { $("ls1").innerHTML = opts; $("ls2").innerHTML = opts; $("ls1").value = settings.ls[0]; $("ls2").value = settings.ls[1]; }
     if (showLady) { $("ladys").innerHTML = opts; $("ladys").value = settings.ladys; }
-    var st = M.META.filter(function (m) { return m.cycle === "stmt" && settings.held[m.id] && m.id !== "citiamaze"; });
-    $("stmt").innerHTML = st.map(function (m) { return '<label class="stl">' + esc(m.name) + ' <input type="number" min="1" max="31" inputmode="numeric" data-stmt="' + m.group + '" value="' + esc(settings.stmt[m.group] || "") + '" placeholder="day"></label>'; }).join("") || '<p class="hint">None of your held cards uses a statement-month cap.</p>';
+    var heldIds = MINE.concat(M.ADDED.map(function (a) { return a.id; })).filter(owned);
+    $("stmt").innerHTML = heldIds.map(function (id) {
+      var day = settings.stmt[id];
+      if (day == null || day === "") day = settings.stmt[groupOf(id)] || "";
+      return '<label class="stl">' + esc(cardName(id)) + ' <input type="number" min="1" max="31" inputmode="numeric" data-stmt="' + id + '" value="' + esc(day) + '" placeholder="cal"></label>';
+    }).join("") || '<p class="hint">Mark a card as held to set its statement day.</p>';
+    var last = settings.lastBackup ? "Last backup: " + settings.lastBackup + "." : "No backup yet.";
+    var stale = log.length && (!settings.lastBackup || (Date.now() - new Date(settings.lastBackup + "T12:00:00").getTime()) > 30 * 864e5);
+    $("backup-status").textContent = last + (stale ? " It's been over 30 days, or you've never exported, and the spend log isn't empty." : "");
     $("ffp").value = settings.ffp;
     if ($("notify")) $("notify").checked = !!settings.notifyCaps;
   }
@@ -480,7 +490,7 @@
     if (!stmtResult) return;
     var card = $("rec-card").value;
     stmtResult.rows.forEach(function (row) {
-      log.push({ id: Date.now() + Math.random().toString(36).slice(2, 6), card: card, amt: row.amount, date: row.date, mcc: row.mcc ? String(row.mcc) : "", bucket: row.bonusMiles > 0 ? row.bucket : "" });
+      log.push({ id: Date.now() + Math.random().toString(36).slice(2, 6), card: card, amt: row.amount, date: row.date, mcc: row.mcc ? String(row.mcc) : "", bucket: row.bonusMiles > 0 ? row.bucket : "", mode: row.mode });
     });
     persist();
     renderAll();
@@ -492,12 +502,85 @@
     renderStmt();
   });
 
-  function renderAll() { renderLookup(); renderTrack(); renderSettings(); }
+  var pendingImport = null;
+  function renderSummary() {
+    if (!$("sum-month")) return;
+    if (!$("sum-month").value) $("sum-month").value = iso(new Date()).slice(0, 7);
+    var probe = $("sum-month").value + "-15";
+    var rows = log.filter(function (e) { return M.dateInCycle(e.date, M.cycleBounds(probe, stmtDayOf(e.card))); });
+    var ownedIds = MINE.concat(M.ADDED.map(function (a) { return a.id; })).filter(owned);
+    var sum = M.monthlySummary(rows, { owned: ownedIds, ls: owned("ls") ? settings.ls : [], ladys: owned("uobladys") ? settings.ladys : "" });
+    var cards = Object.keys(sum.byCard).map(function (id) { return sum.byCard[id]; });
+    $("sum-out").innerHTML = "<p><b>" + grp(sum.totalMiles) + " miles</b> · bonus " + grp(sum.bonusMiles) + " · base " + grp(sum.baseMiles) + " · missed " + grp(sum.missed) + "</p><div id=\"sum-cards\">" +
+      (cards.map(function (c) {
+        var caps = (c.caps || []).map(function (x) { return esc(x.bucket) + " " + x.pct + "% (" + grp(x.used) + (x.cap ? " / " + grp(x.cap) : "") + ")"; }).join(" · ");
+        return '<div class="capcard"><b>' + esc(c.name) + '</b><div class="meta">' + grp(c.total) + " miles · bonus " + grp(c.bonus) + " · base " + grp(c.base) + "</div>" + (caps ? '<div class="meta">' + caps + "</div>" : "") + "</div>";
+      }).join("") || '<p class="hint">Nothing logged in this cycle.</p>') + "</div>" +
+      (sum.missedTop.length ? "<h2>Missed miles</h2><ul class=\"log\">" + sum.missedTop.map(function (m) { return "<li><span>" + esc(m.date) + " · " + esc(m.descriptor) + " on " + esc(m.card) + " (" + grp(m.actual) + ") vs " + esc(m.best) + " (" + grp(m.bestMiles) + ')</span><b>' + grp(m.shortfall) + "</b></li>"; }).join("") + "</ul>" : "");
+  }
+  $("sum-month").addEventListener("change", renderSummary);
+  $("export-data").addEventListener("click", function () {
+    settings.lastBackup = iso(new Date());
+    persist();
+    var payload = { app: "milekaki", version: 1, exportedAt: new Date().toISOString(), settings: settings, log: log, capAlerts: load("mm.capAlerts", []), reconcile: load("mm.reconcile", null) };
+    var blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "milekaki-backup-" + settings.lastBackup + ".json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+    renderSettings();
+  });
+  $("import-file").addEventListener("change", function () {
+    var file = $("import-file").files && $("import-file").files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      var parsed = M.parseBackup(String(reader.result || ""));
+      if (!parsed.ok) { pendingImport = null; $("import-preview").hidden = true; alert(parsed.error); return; }
+      pendingImport = parsed;
+      $("import-sum").textContent = parsed.preview.log + " spend entries" + (parsed.preview.dropped ? " (" + parsed.preview.dropped + " skipped as invalid)" : "") + ", " + parsed.preview.alerts + " cap alerts" + (parsed.preview.exportedAt ? ". Exported " + parsed.preview.exportedAt.slice(0, 10) : "") + ". Settings and cap alerts will be replaced.";
+      $("import-preview").hidden = false;
+    };
+    reader.readAsText(file);
+  });
+  $("import-cancel").addEventListener("click", function () { pendingImport = null; $("import-preview").hidden = true; $("import-file").value = ""; });
+  $("import-go").addEventListener("click", function () {
+    if (!pendingImport) return;
+    var chosen = document.querySelector('input[name="logmode"]:checked');
+    var current = log.slice();
+    settings = pendingImport.settings;
+    if (!settings.stmt) settings.stmt = {};
+    var migrated = M.ladySettings(settings);
+    settings.ls = migrated.ls;
+    settings.ladys = migrated.ladys;
+    log = chosen && chosen.value === "merge" ? M.mergeLogs(current, pendingImport.log) : pendingImport.log.slice();
+    save("mm.capAlerts", pendingImport.capAlerts || []);
+    if (pendingImport.reconcile != null) save("mm.reconcile", pendingImport.reconcile);
+    persist();
+    location.reload();
+  });
+
+  function renderAll() { renderLookup(); renderTrack(); renderSettings(); renderSummary(); }
   $("sources").innerHTML = SOURCES.map(function (s) { return '<li><a href="' + esc(s.href) + '" target="_blank" rel="noopener">' + esc(s.title) + "</a> · " + esc(s.site) + (s.date ? " · " + esc(s.date) : "") + "</li>"; }).join("");
   var h = location.hash.slice(1).split("/");
   if (/^\d{4}$/.test(h[0])) inp.value = h[0];
   if (MODE_IDS.indexOf(h[1]) >= 0) state.mode = h[1];
   else if (h[1] === "store") state.mode = "wallet";
   renderAdded(); renderAll();
+  if (log.length && (!settings.lastBackup || (Date.now() - new Date(settings.lastBackup + "T12:00:00").getTime()) > 30 * 864e5)) {
+    liveBanners.push({ key: "backup-reminder", text: "No backup in the last 30 days. Export your spend log from Settings when you can." });
+    renderBanners();
+  }
+  var params = new URLSearchParams(location.search);
+  var tab = params.get("tab");
+  if (tab && $("tab-" + tab)) {
+    document.querySelectorAll(".tabs button").forEach(function (x) { x.setAttribute("aria-selected", x.dataset.tab === tab ? "true" : "false"); });
+    document.querySelectorAll(".tab").forEach(function (t) { t.hidden = t.id !== "tab-" + tab; });
+  }
+  if (params.get("focus") === "merchant") kw.focus();
+  if (params.get("focus") === "mcc") inp.focus();
   if ("serviceWorker" in navigator) window.addEventListener("load", function () { navigator.serviceWorker.register("sw.js").catch(function () {}); });
 })();

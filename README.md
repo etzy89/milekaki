@@ -31,6 +31,10 @@ TODO: Ernest must create the GoatCounter site `milekaki` at https://www.goatcoun
 
 `node scripts/build-mcc-pages.js` writes `public/mcc/<code>.html` for each merchant MCC and refreshes `public/sitemap.xml`. Run it after rebuilding the engine. Those pages are not in the service worker's precache.
 
+## Backup and summary
+
+Settings → Export data writes `milekaki-backup-YYYY-MM-DD.json` (settings, spend log, cap-alert keys, and any saved reconcile blob). Import previews the file, then replaces settings or merges the Caps log. A Summary tab totals each card's cycle, including miles left on the table versus the best card you hold. Long-press the installed app icon for "Which card?" (`/?tab=lookup&focus=merchant`).
+
 ## Reconcile
 
 The Reconcile tab reads a statement on this device only: CSV, pasted text, a PDF via the vendored pdf.js build in `public/vendor/pdfjs/`, or a row you type. Nothing is stored unless you choose "Save these into the Caps log". Delete statement clears the on-screen copy. Your statement never leaves your device.

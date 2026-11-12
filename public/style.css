@@ -93,7 +93,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   #tab-lookup{display:grid;grid-template-columns:minmax(300px,420px) minmax(0,1fr);column-gap:28px;align-items:start}
   #tab-lookup .lookup-side{grid-column:1}
   #tab-lookup .results{grid-column:2;grid-row:1}
-  #caps{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start}
+  #caps,#sum-cards{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start}
   .held{column-count:2;column-gap:28px}
   .held h3,.held .chk{break-inside:avoid}
   .recon{font-size:14px}

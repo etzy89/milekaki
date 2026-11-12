@@ -131,5 +131,23 @@ const gap=M.explainMilesGap(pv.rows,20,2000);
 ok(gap.delta===-400 && gap.likely.some(r=>r.descriptor==="IKEA") && gap.likely.some(r=>r.descriptor==="AIA"),"shortfall points at cap and exclusion");
 const page=fs.readFileSync(__dirname+"/public/mcc/5651.html","utf8");
 ok(page.includes("Uniqlo") && page.includes("MCC 5651") && page.includes("https://milekaki.com/#5651/tap") && page.includes("milekaki.goatcounter.com/count"),"mcc page");
+const backup={app:"milekaki",version:1,exportedAt:"2026-11-12T00:00:00.000Z",settings:{held:{pv:true},ls:["dining","travel"],ladys:"dining"},log:[{id:"a",card:"pv",amt:10,date:"2026-11-01",mcc:"5411",bucket:"contactless"},{id:"",card:"nope"}],capAlerts:["pv|contactless|2026-11-01|80"]};
+const parsed=M.parseBackup(JSON.parse(JSON.stringify(backup)));
+ok(parsed.ok && parsed.preview.log===1 && parsed.preview.dropped===1 && parsed.preview.alerts===1,"backup validates");
+const round=M.parseBackup(JSON.parse(JSON.stringify({app:"milekaki",version:1,exportedAt:backup.exportedAt,settings:parsed.settings,log:parsed.log,capAlerts:parsed.capAlerts})));
+ok(round.ok && round.log[0].id==="a" && round.log[0].amt===10,"backup round trip");
+ok(M.mergeLogs([{id:"b",card:"trust",amt:5,date:"2026-11-02"}], parsed.log).length===2,"merge log");
+ok(M.parseBackup({app:"other",settings:{},log:[]}).ok===false,"reject foreign backup");
+const cal=M.cycleBounds("2026-11-10",0);
+ok(cal.start==="2026-11-01" && cal.end==="2026-11-30" && cal.kind==="calendar month","calendar cycle");
+const early=M.cycleBounds("2026-11-10",15);
+const late=M.cycleBounds("2026-11-16",15);
+ok(early.start==="2026-10-16" && early.end==="2026-11-15" && late.start==="2026-11-16" && late.end==="2026-12-15","statement cycle");
+ok(M.dateInCycle("2026-11-10",early) && !M.dateInCycle("2026-11-16",early),"cycle membership");
+const summary=M.monthlySummary([
+  {card:"pv",amt:600,date:"2026-11-02",mcc:"5411",mode:"wallet",descriptor:"FairPrice"},
+  {card:"pv",amt:100,date:"2026-11-03",mcc:"5411",mode:"wallet",descriptor:"FairPrice again"}
+],{owned:["pv","trust"],ls:[],ladys:""});
+ok(summary.byCard.pv.bonus===2400 && summary.byCard.pv.base===40 && summary.missed===90 && summary.missedTop[0].best==="Trust" && summary.byCard.pv.caps[0].pct===100,"missed miles after cap");
 console.log("added cards:",M.ADDED.length,"merchants:",M.MERCHANTS.length, "fails:",fail);
 process.exit(fail?1:0);
