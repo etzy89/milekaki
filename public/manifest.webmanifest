@@ -1,6 +1,6 @@
 {
-  "name": "Cardsmart",
-  "short_name": "Cardsmart",
+  "name": "Milekaki",
+  "short_name": "Milekaki",
   "description": "Which of my cards earns the most miles, points or cashback for an MCC. Data as of Nov 2026.",
   "start_url": "./",
   "scope": "./",
