@@ -176,7 +176,6 @@ const BILLS: { key: string; label: string; set: (n: number) => boolean }[] = [
 const NONE = "No miles";
 const KF_HSBC = "30,000:10,000 since 16 Jan 2025";
 const RBN = "Pay one-off online or in-app; recurring card-on-file billing earns nothing";
-const WAL = "Use the physical Amaze card; Amaze added to Apple/Google Pay may lose the bonus (MileLion reading, not explicit in Citi T&Cs)";
 const r2 = (x: number) => Math.round(x * 100) / 100;
 const instore = (m: Mode) => m === "tap" || m === "chip" || m === "wallet" || m === "fcy";
 const isFcy = (m: Mode) => m === "fcy" || m === "fcyon";
@@ -230,7 +229,6 @@ function rCiti(n: number, m: Mode, amaze: boolean): Res {
   }
   if (amaze) {
     const fee = isFcy(m) ? "Amaze ~2% FX spread instead of 3.25%" : "Amaze 1% fee on SGD (min. S$0.50)";
-    if (m === "wallet") return z(4, "main", "Amaze in Apple/Google Pay, linked to Citi Rewards Mastercard", cap, `${rb ? RBN + ". " : ""}${WAL}. ${fee}`, true);
     return z(4, "main", "Pay with the Amaze card linked to Citi Rewards Mastercard (codes as online)", cap, `${rb ? RBN + ". " : ""}${fee}`, false);
   }
   if (CITI_FASHION(n)) return z(4, "main", "Fashion MCC: any channel", cap, "", false);
@@ -521,6 +519,145 @@ const MERCHANTS: Merchant[] = [
   { n: "Atome", m: 0, v: "MCC depends on the merchant", t: ["atome"], s: "ML guide 8 Oct 2026", mode: "online" },
   { n: "YouTrip top-up", m: 6540, v: "top-ups earn nothing" }, { n: "GrabPay top-up", m: 6540, v: "top-ups earn nothing" }, { n: "Wise transfer", m: 4829, v: "excluded almost everywhere" },
 ];
+// Per-transaction earn blocks already described on each card. approx = the block is not from the issuer T&Cs.
+type BlockInfo = { block: number; approx: boolean; why: string };
+function blockOf(id: string): BlockInfo {
+  const known: { [k: string]: BlockInfo } = {
+    pv: { block: 5, approx: false, why: "UNI$ per S$5, per transaction" },
+    vs: { block: 5, approx: false, why: "UNI$ per S$5, per transaction" },
+    ls: { block: 5, approx: false, why: "UNI$ per S$5, per transaction" },
+    citi: { block: 1, approx: false, why: "Per S$1, per transaction" },
+    citiamaze: { block: 1, approx: false, why: "Per S$1, per transaction" },
+    hsbc: { block: 1, approx: false, why: "Rounded down to S$1" },
+    trust: { block: 5, approx: true, why: "S$5 rounding is from MileLion, not Trust's T&Cs" },
+    xl: { block: 5, approx: false, why: "S$5 blocks per transaction (T&Cs)" },
+    ocbcrewards: { block: 5, approx: true, why: "S$5 rounding is from the card guide, not checked against OCBC T&Cs" },
+  };
+  return known[id] || { block: 0, approx: false, why: "" };
+}
+
+type QuoteIn = {
+  amount: number; mpd: number; base: number; cap: number | null;
+  used: number; spent: number; min: number; block: number;
+  blockApprox: boolean; blockWhy: string; rateApprox: boolean; capUnmodelled: boolean;
+};
+type QuotePart = { amt: number; mpd: number };
+type Quote = {
+  miles: number; eff: number; parts: QuotePart[]; breakdown: string;
+  capHit: boolean; capLeft: number | null; minShort: boolean;
+  approx: boolean; approxWhy: string; roundedOff: number;
+};
+
+function grp(n: number): string {
+  const r = Math.round(n * 100) / 100;
+  const neg = r < 0;
+  const [w, f] = Math.abs(r).toString().split(".");
+  const g = w.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return (neg ? "-" : "") + (f ? g + "." + f : g);
+}
+function num(n: number): string { return (Math.round(n * 100) / 100).toString(); }
+
+function quoteEarn(q: QuoteIn): Quote {
+  const empty: Quote = { miles: 0, eff: 0, parts: [], breakdown: "", capHit: false, capLeft: null, minShort: false, approx: false, approxWhy: "", roundedOff: 0 };
+  if (!(q.amount > 0)) return empty;
+  const block = q.block > 1 ? q.block : 0;
+  const eligible = block ? Math.floor(q.amount / block) * block : q.amount;
+  const roundedOff = r2(q.amount - eligible);
+  const bonusPossible = q.mpd > q.base;
+  const minShort = bonusPossible && q.min > 0 && q.spent + q.amount < q.min;
+  let capLeft: number | null = null;
+  let bonusAmt = 0;
+  let baseAmt = 0;
+  let rate = q.mpd;
+  if (!bonusPossible || minShort) {
+    baseAmt = eligible;
+    rate = q.base;
+  } else if (q.cap == null) {
+    bonusAmt = eligible;
+  } else {
+    capLeft = Math.max(0, r2(q.cap - q.used));
+    bonusAmt = Math.min(eligible, capLeft);
+    baseAmt = r2(eligible - bonusAmt);
+  }
+  const parts: QuotePart[] = [];
+  if (bonusAmt > 0) parts.push({ amt: r2(bonusAmt), mpd: q.mpd });
+  if (baseAmt > 0) parts.push({ amt: r2(baseAmt), mpd: minShort || !bonusPossible ? rate : q.base });
+  const miles = r2(parts.reduce((s: number, p: QuotePart) => s + p.amt * p.mpd, 0));
+  const capHit = !minShort && bonusPossible && q.cap != null && capLeft != null && eligible >= capLeft;
+  const why: string[] = [];
+  if (q.blockApprox && block) why.push(q.blockWhy || "Earn block is approximated");
+  if (q.rateApprox) why.push("This rate is unverified");
+  if (q.capUnmodelled) why.push("A cap or minimum in the card note is not applied to this total");
+  const breakdown = parts.map((p: QuotePart) => grp(p.amt) + " × " + num(p.mpd) + " mpd").join(" + ");
+  return { miles, eff: r2(miles / q.amount), parts, breakdown, capHit, capLeft, minShort, approx: why.length > 0, approxWhy: why.join(". "), roundedOff };
+}
+
+type SplitCard = {
+  id: string; name: string; group: string; bucket: string;
+  mpd: number; base: number; cap: number | null; used: number; spent: number; min: number;
+  block: number; blockApprox: boolean; blockWhy: string; rateApprox: boolean; capUnmodelled: boolean;
+};
+type SplitLeg = { id: string; name: string; amt: number; miles: number };
+type SplitPlan = { better: boolean; miles: number; singleMiles: number; text: string; legs: SplitLeg[] };
+
+function quoteOf(c: SplitCard, amount: number, cap: number | null, used: number): Quote {
+  return quoteEarn({ amount, mpd: c.mpd, base: c.base, cap, used, spent: c.spent, min: c.min, block: c.block, blockApprox: c.blockApprox, blockWhy: c.blockWhy, rateApprox: c.rateApprox, capUnmodelled: c.capUnmodelled });
+}
+
+// Greedy: fill the highest bonus caps first (one pool per card group + bucket), then the best uncapped rate.
+function splitPlan(amount: number, cards: SplitCard[]): SplitPlan {
+  const none: SplitPlan = { better: false, miles: 0, singleMiles: 0, text: "", legs: [] };
+  if (!(amount > 0) || !cards.length) return none;
+  let singleMiles = 0;
+  for (const c of cards) singleMiles = Math.max(singleMiles, quoteOf(c, amount, c.cap, c.used).miles);
+  singleMiles = r2(singleMiles);
+  const poolLeft: { [k: string]: number } = {};
+  const slots = cards.filter((c: SplitCard) => c.cap != null && c.mpd > c.base).map((c: SplitCard) => {
+    const key = c.group + ":" + (c.bucket || "");
+    const left = Math.max(0, r2((c.cap as number) - c.used));
+    if (poolLeft[key] == null) poolLeft[key] = left;
+    return { c, key };
+  });
+  slots.sort((a: { c: SplitCard; key: string }, b: { c: SplitCard; key: string }) => b.c.mpd - a.c.mpd || a.c.name.localeCompare(b.c.name));
+  let leftAmt = amount;
+  const legs: SplitLeg[] = [];
+  for (const s of slots) {
+    if (leftAmt <= 0) break;
+    const avail = poolLeft[s.key] || 0;
+    if (avail <= 0) continue;
+    const take = Math.min(avail, leftAmt);
+    if (s.c.min > 0 && s.c.spent + take < s.c.min) continue;
+    poolLeft[s.key] = r2(avail - take);
+    leftAmt = r2(leftAmt - take);
+    legs.push({ id: s.c.id, name: s.c.name, amt: take, miles: quoteOf(s.c, take, s.c.cap, s.c.used).miles });
+  }
+  if (leftAmt > 0) {
+    const rest = cards.slice().sort((a: SplitCard, b: SplitCard) => {
+      const ra = a.cap == null ? a.mpd : a.base;
+      const rb = b.cap == null ? b.mpd : b.base;
+      return rb - ra || a.name.localeCompare(b.name);
+    });
+    const best = rest[0];
+    if (best) {
+      const capped = best.cap != null;
+      const q = quoteOf(best, leftAmt, capped ? best.cap : null, capped ? (best.cap as number) : 0);
+      const prev = legs.filter((l: SplitLeg) => l.id === best.id).pop();
+      if (prev) { prev.amt = r2(prev.amt + leftAmt); prev.miles = r2(prev.miles + q.miles); }
+      else legs.push({ id: best.id, name: best.name, amt: leftAmt, miles: q.miles });
+    }
+  }
+  const miles = r2(legs.reduce((s: number, l: SplitLeg) => s + l.miles, 0));
+  const distinct = legs.reduce((s: string[], l: SplitLeg) => (s.indexOf(l.id) < 0 ? s.concat(l.id) : s), [] as string[]);
+  const better = distinct.length >= 2 && miles > singleMiles + 0.01;
+  let text = "";
+  if (better) {
+    const money = (n: number) => "S$" + grp(n);
+    if (legs.length === 2) text = "Put first " + money(legs[0].amt) + " on " + legs[0].name + ", rest on " + legs[1].name;
+    else text = "Put " + legs.slice(0, -1).map((l: SplitLeg, i: number) => (i ? "next " : "first ") + money(l.amt) + " on " + l.name).join(", ") + ", rest on " + legs[legs.length - 1].name;
+  }
+  return { better, miles, singleMiles, text, legs };
+}
+
 function searchMerchants(q: string): Merchant[] {
   const s = q.trim().toLowerCase();
   if (s.length < 2) return [];
@@ -528,5 +665,5 @@ function searchMerchants(q: string): Merchant[] {
 }
 // ===== END APP DATA =====
 
-export { ROWS, CARDS, SUMMARY, GROUPS, MODES, LS_CATS, ADDED, META, MERCHANTS, lookup, lookupAll, kind, searchMerchants };
-export type { Mode, Res, Opts, Merchant, Meta, Added };
+export { ROWS, CARDS, SUMMARY, GROUPS, MODES, LS_CATS, ADDED, META, MERCHANTS, lookup, lookupAll, kind, searchMerchants, blockOf, quoteEarn, splitPlan };
+export type { Mode, Res, Opts, Merchant, Meta, Added, Quote, QuoteIn, SplitPlan, SplitCard };

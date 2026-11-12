@@ -29,6 +29,39 @@
   function metaOf(id) { return M.META.filter(function (m) { return m.id === id; })[0] || null; }
   function groupOf(id) { var m = metaOf(id); return m ? m.group : id; }
   function cardName(id) { if (MINE_NAMES[id]) return MINE_NAMES[id]; var a = M.ADDED.filter(function (x) { return x.id === id; })[0]; return a ? a.name : id; }
+  var BANK_LABEL = { AMEX: "Amex", BOC: "BOC", Chocolate: "Chocolate", Citi: "Citi", DBS: "DBS", DCS: "DCS", GXS: "GXS", HSBC: "HSBC", Maybank: "Maybank", OCBC: "OCBC", SC: "Standard Chartered", Trust: "Trust", UOB: "UOB" };
+  var MINE_BANK = { pv: "UOB", vs: "UOB", citi: "Citi", citiamaze: "Citi", dbs: "DBS", ls: "UOB", hsbc: "HSBC", trust: "Trust", xl: "Maybank" };
+  function bankOf(id) { if (MINE_BANK[id]) return MINE_BANK[id]; var a = M.ADDED.filter(function (x) { return x.id === id; })[0]; return a ? a.bank : "Other"; }
+  function bankLabel(code) { return BANK_LABEL[code] || code; }
+  function grouped(items) {
+    var map = {};
+    items.forEach(function (it) { var b = bankOf(it.id); (map[b] = map[b] || []).push(it); });
+    return Object.keys(map).sort(function (a, b) { return bankLabel(a).localeCompare(bankLabel(b)); }).map(function (b) {
+      map[b].sort(function (a, c) { return a.name.localeCompare(c.name); });
+      return { label: bankLabel(b), items: map[b] };
+    });
+  }
+  function grp(n) { var r = Math.round(n * 100) / 100, p = Math.abs(r).toString().split("."), g = p[0].replace(/\B(?=(\d{3})+(?!\d))/g, ","); return (r < 0 ? "-" : "") + (p[1] ? g + "." + p[1] : g); }
+  function quoteFor(r, amt) {
+    var meta = metaOf(r.id), b = M.blockOf(r.id), cap = null, usedAmt = 0, spentAmt = 0, min = 0;
+    if (meta) {
+      min = meta.min || 0;
+      if (r.bucket && meta.caps[r.bucket]) { cap = meta.caps[r.bucket]; usedAmt = used(r.id, r.bucket); }
+      spentAmt = spent(r.id, meta.minScope === "bucket" ? r.bucket : null);
+    }
+    var capUnmodelled = r.mpd > r.base && r.cap && !/^no cap$/i.test(String(r.cap).trim()) && r.cap !== "—" && cap == null;
+    return M.quoteEarn({ amount: amt, mpd: r.mpd, base: r.base, cap: cap, used: usedAmt, spent: spentAmt, min: min, block: b.block, blockApprox: b.approx, blockWhy: b.why, rateApprox: !!r.flag, capUnmodelled: !!capUnmodelled });
+  }
+  function splitCard(r) {
+    var meta = metaOf(r.id), b = M.blockOf(r.id), cap = null, usedAmt = 0, spentAmt = 0, min = 0;
+    if (meta) {
+      min = meta.min || 0;
+      if (r.bucket && meta.caps[r.bucket]) { cap = meta.caps[r.bucket]; usedAmt = used(r.id, r.bucket); }
+      spentAmt = spent(r.id, meta.minScope === "bucket" ? r.bucket : null);
+    }
+    var capUnmodelled = r.mpd > r.base && r.cap && !/^no cap$/i.test(String(r.cap).trim()) && r.cap !== "—" && cap == null;
+    return { id: r.id, name: cardName(r.id), group: r.group || r.id, bucket: r.bucket || "", mpd: r.mpd, base: r.base, cap: cap, used: usedAmt, spent: spentAmt, min: min, block: b.block, blockApprox: b.approx, blockWhy: b.why, rateApprox: !!r.flag, capUnmodelled: !!capUnmodelled };
+  }
 
   // ----- cycles -----
   function cycle(id, today) {
@@ -94,16 +127,48 @@
     ctx.textContent = parts.join(" — ");
     var amt = parseFloat(amtIn.value) || 0;
     var res = M.lookupAll(n, state.mode, { ls: settings.ls, tags: state.tags });
-    var rows = res.filter(function (r) { return settings.showAll || settings.held[r.id]; }).map(function (r, i) { var ev = evaluate(r, amt); return { r: r, ev: ev, i: i }; });
-    rows.sort(function (a, b) { return b.ev.eff - a.ev.eff || b.r.mpd - a.r.mpd || a.i - b.i; });
+    var all = res.map(function (r, i) { return { r: r, ev: amt > 0 ? null : evaluate(r, amt), q: amt > 0 ? quoteFor(r, amt) : null, i: i }; });
+    var rows = all.filter(function (x) { return settings.showAll || settings.held[x.r.id]; });
+    rows.sort(function (a, b) {
+      if (amt > 0) return b.q.miles - a.q.miles || b.q.eff - a.q.eff || b.r.mpd - a.r.mpd || a.i - b.i;
+      return b.ev.eff - a.ev.eff || b.r.mpd - a.r.mpd || a.i - b.i;
+    });
     if (!rows.length) { out.innerHTML = '<li class="empty">No cards selected. Mark cards as held in Settings.</li>'; return; }
-    out.innerHTML = rows.map(function (x, i) {
-      var r = x.r, ev = x.ev, k = M.kind(r), eff = ev.eff;
-      var cls = eff >= 3 ? "bonus" : eff === 0 ? "none" : eff >= 1 ? "mid" : "";
-      var held = settings.held[r.id];
-      var head = eff !== r.mpd ? '<div class="meta">Headline ' + fmt(r.mpd) + " mpd</div>" : "";
+    var extra = "";
+    if (amt > 0) {
+      var heldRows = all.filter(function (x) { return settings.held[x.r.id]; });
+      var bestHeld = heldRows.reduce(function (m, x) { return Math.max(m, x.q.miles); }, 0);
+      if (heldRows.length) {
+        var better = all.filter(function (x) { return !settings.held[x.r.id] && x.q.miles > bestHeld + 0.01; }).sort(function (a, b) { return b.q.miles - a.q.miles; }).slice(0, 3);
+        if (better.length) extra += '<li class="callout">Better card you don\'t use: ' + better.map(function (x) { return esc(x.r.card) + " would earn " + grp(x.q.miles) + " miles (" + fmt(x.q.eff) + " mpd)"; }).join("; ") + ".</li>";
+        var plan = M.splitPlan(amt, heldRows.map(function (x) { return splitCard(x.r); }));
+        if (plan.better) extra += '<li class="callout">' + esc(plan.text) + " (" + grp(plan.miles) + " miles vs " + grp(plan.singleMiles) + " on one card).</li>";
+      }
+    }
+    out.innerHTML = extra + rows.map(function (x, i) {
+      var r = x.r, held = settings.held[r.id];
       var kf = settings.ffp === "KrisFlyer" && r.kf ? '<div class="meta">' + esc(r.kf) + "</div>" : "";
-      return '<li class="' + cls + (held ? "" : " nh") + '"><div class="row1"><span class="card">' + (i + 1) + ". " + esc(r.card) + (held ? "" : ' <span class="tag">not held</span>') + (r.added ? ' <span class="tag">guide</span>' : "") + '</span><span class="mpd">' + fmt(eff) + " <small>mpd · " + esc(eff !== r.mpd ? "effective" : k) + "</small></span></div>" + head +
+      var score, sub;
+      if (amt > 0) {
+        var q = x.q;
+        var cls = q.eff >= 3 ? "bonus" : q.eff === 0 ? "none" : q.eff >= 1 ? "mid" : "";
+        score = '<span class="mpd">' + grp(q.miles) + ' <small>miles</small></span>';
+        sub = '<div class="meta">' + fmt(q.eff) + " mpd effective" + (q.eff !== r.mpd ? " · headline " + fmt(r.mpd) : "") + "</div>" +
+          (q.breakdown ? '<div class="how">' + esc(q.breakdown) + "</div>" : "") +
+          (q.capHit ? '<div class="meta warn">Cap hit' + (q.capLeft != null ? " · " + money(q.capLeft) + " of bonus left before this spend" : "") + "</div>" : "") +
+          (q.minShort ? '<div class="meta warn">Min. spend not reached: counted at the base rate</div>' : "") +
+          (q.roundedOff > 0 ? '<div class="meta">' + money(q.roundedOff) + " earns nothing" + (q.approxWhy ? "" : " (earn block)") + "</div>" : "") +
+          (q.approx ? '<div class="meta note amb"><span class="flag">approximated</span>' + esc(q.approxWhy) + "</div>" : "");
+        return '<li class="' + cls + (held ? "" : " nh") + '"><div class="row1"><span class="card">' + (i + 1) + ". " + esc(cardName(r.id)) + (held ? "" : ' <span class="tag">not held</span>') + '</span>' + score + "</div>" + sub +
+          '<div class="how">' + esc(r.how) + "</div>" +
+          '<div class="meta">Cap: ' + esc(r.cap || "—") + "</div>" +
+          (r.note || r.flag ? '<div class="meta note' + (r.flag ? " amb" : "") + '">' + (r.flag ? '<span class="flag">unverified</span>' : "") + esc(r.note) + "</div>" : "") + kf +
+          (held && metaOf(r.id) ? '<button class="logbtn" data-id="' + esc(r.id) + '" data-bucket="' + esc(r.mpd > r.base ? r.bucket : "") + '" data-mcc="' + (n || "") + '">Log spend</button>' : "") + "</li>";
+      }
+      var ev = x.ev, k = M.kind(r), eff = ev.eff;
+      var cls0 = eff >= 3 ? "bonus" : eff === 0 ? "none" : eff >= 1 ? "mid" : "";
+      var head = eff !== r.mpd ? '<div class="meta">Headline ' + fmt(r.mpd) + " mpd</div>" : "";
+      return '<li class="' + cls0 + (held ? "" : " nh") + '"><div class="row1"><span class="card">' + (i + 1) + ". " + esc(cardName(r.id)) + (held ? "" : ' <span class="tag">not held</span>') + '</span><span class="mpd">' + fmt(eff) + " <small>mpd · " + esc(eff !== r.mpd ? "effective" : k) + "</small></span></div>" + head +
         '<div class="how">' + esc(r.how) + "</div>" +
         '<div class="meta">Cap: ' + esc(r.cap || "—") + "</div>" +
         (ev.capLine ? '<div class="meta">' + esc(ev.capLine) + "</div>" : "") +
@@ -157,7 +222,7 @@
   function renderTrack() {
     var ids = M.META.filter(function (m) { return settings.held[m.id]; }).map(function (m) { return m.id; }).concat(M.ADDED.filter(function (a) { return settings.held[a.id] && !metaOf(a.id); }).map(function (a) { return a.id; }));
     var cur = $("f-card").value;
-    $("f-card").innerHTML = ids.map(function (id) { return '<option value="' + id + '">' + esc(cardName(id)) + "</option>"; }).join("");
+    $("f-card").innerHTML = grouped(ids.map(function (id) { return { id: id, name: cardName(id) }; })).map(function (g) { return '<optgroup label="' + esc(g.label) + '">' + g.items.map(function (it) { return '<option value="' + it.id + '">' + esc(it.name) + "</option>"; }).join("") + "</optgroup>"; }).join("");
     if (ids.indexOf(cur) >= 0) $("f-card").value = cur;
     renderFormBuckets();
     if (!$("f-date").value) $("f-date").value = iso(new Date());
@@ -191,7 +256,8 @@
   // ----- settings -----
   function renderSettings() {
     var cb = function (id, name) { return '<label class="chk"><input type="checkbox" data-held="' + id + '"' + (settings.held[id] ? " checked" : "") + "> " + esc(name) + "</label>"; };
-    $("held").innerHTML = "<h3>Your cards</h3>" + MINE.map(function (id) { return cb(id, MINE_NAMES[id]); }).join("") + "<h3>Cards from MileLion's guide</h3>" + M.ADDED.map(function (a) { return cb(a.id, a.name); }).join("");
+    var pick = MINE.map(function (id) { return { id: id, name: MINE_NAMES[id] }; }).concat(M.ADDED.map(function (a) { return { id: a.id, name: a.name }; }));
+    $("held").innerHTML = grouped(pick).map(function (g) { return "<h3>" + esc(g.label) + "</h3>" + g.items.map(function (it) { return cb(it.id, it.name); }).join(""); }).join("");
     var opts = M.LS_CATS.map(function (c) { return '<option value="' + c.key + '">' + esc(c.label) + "</option>"; }).join("");
     $("ls1").innerHTML = opts; $("ls2").innerHTML = opts; $("ls1").value = settings.ls[0]; $("ls2").value = settings.ls[1];
     var st = M.META.filter(function (m) { return m.cycle === "stmt" && settings.held[m.id] && m.id !== "citiamaze"; });
@@ -206,11 +272,14 @@
 
   // ----- added cards -----
   function renderAdded() {
-    $("addedlist").innerHTML = M.ADDED.map(function (a) {
-      var rate = (a.local != null ? fmt(a.local) + " mpd local" : "local n/a") + " · " + (a.fcy != null ? fmt(a.fcy) + " mpd FCY" : "FCY n/a");
-      var bon = a.bonuses.map(function (b) { return fmt(b.mpd) + " mpd: " + b.how; });
-      var bills = Object.keys(a.bills).map(function (k) { return k + " " + fmt(a.bills[k]); });
-      return '<div class="capcard"><div class="row1"><b>' + esc(a.name) + '</b><span class="meta">' + esc(a.bank) + '</span></div><div class="how">' + esc(rate) + "</div>" + (bon.length ? '<div class="meta">' + esc(bon.join(" · ")) + "</div>" : "") + (bills.length ? '<div class="meta">Bills: ' + esc(bills.join(", ")) + "</div>" : "") + '<div class="meta">Cap: ' + esc(a.cap) + "</div>" + (a.note ? '<div class="meta">' + esc(a.note) + "</div>" : "") + '<div class="meta">Source: ' + esc(a.src) + "</div></div>";
+    $("addedlist").innerHTML = grouped(M.ADDED.map(function (a) { return { id: a.id, name: a.name, a: a }; })).map(function (g) {
+      return "<h3>" + esc(g.label) + "</h3>" + g.items.map(function (it) {
+        var a = it.a;
+        var rate = (a.local != null ? fmt(a.local) + " mpd local" : "local n/a") + " · " + (a.fcy != null ? fmt(a.fcy) + " mpd FCY" : "FCY n/a");
+        var bon = a.bonuses.map(function (b) { return fmt(b.mpd) + " mpd: " + b.how; });
+        var bills = Object.keys(a.bills).map(function (k) { return k + " " + fmt(a.bills[k]); });
+        return '<div class="capcard"><div class="row1"><b>' + esc(a.name) + '</b><span class="meta">' + esc(bankLabel(a.bank)) + '</span></div><div class="how">' + esc(rate) + "</div>" + (bon.length ? '<div class="meta">' + esc(bon.join(" · ")) + "</div>" : "") + (bills.length ? '<div class="meta">Bills: ' + esc(bills.join(", ")) + "</div>" : "") + '<div class="meta">Cap: ' + esc(a.cap) + "</div>" + (a.note ? '<div class="meta">' + esc(a.note) + "</div>" : "") + '<div class="meta">Source: ' + esc(a.src) + "</div></div>";
+      }).join("");
     }).join("");
   }
 

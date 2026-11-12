@@ -59,6 +59,7 @@ h3{font-size:13px;color:var(--mut);margin:12px 0 4px;text-transform:uppercase;le
 .form #f-card{grid-column:1/-1}
 .primary{background:var(--acc);color:#fff;border:0;border-radius:12px;font-size:16px;font-weight:700;padding:10px}
 .hint{font-size:12px;color:var(--mut)}
+.results li.callout{border-left-color:var(--b);font-size:14px}
 .capcard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px}
 .bar{margin-top:8px}
 .barl{display:flex;justify-content:space-between;font-size:12px;color:var(--mut)}
