@@ -60,5 +60,64 @@ ok(get(9311,"online","amexkfascend").mpd===1.2 && get(9311,"online","dbsaltitude
 ok(get(5999,"fcy","dbsaltitude").mpd===2.2 && get(5999,"tap","dbsaltitude").mpd===1.3,"Altitude");
 ok(get(5999,"tap","hsbctravelone").kf.includes("1"),"TravelOne kf");
 ok(M.lookupAll(5999,"tap").filter(r=>r.added).length>=35,"added count");
+ok(M.referralFor("pv").url==="" && M.referralFor("uobprvi").url==="" && M.referralFor("pv").label==="Apply","referral slots empty");
+ok(M.capThresholds(0,799,1000).join(",")==="","under 80");
+ok(M.capThresholds(0,800,1000).join(",")==="80","hit 80");
+ok(M.capThresholds(700,1000,1000).join(",")==="80,100","cross 80 and 100");
+ok(M.capThresholds(800,900,1000).join(",")==="","already past 80");
+ok(M.capThresholds(900,1000,1000).join(",")==="100","hit 100");
+ok(M.capThresholds(1000,1200,1000).join(",")==="","already at 100");
+ok(M.capThresholds(0,1000,0).join(",")==="","no cap");
+const seen=["citi|main|2026-11-01|80"];
+const fire=M.capAlertsToFire({cardId:"citi",bucket:"main",cycleKey:"2026-11-01",beforeUsed:700,afterUsed:1000,cap:1000,seen});
+ok(fire.keys.length===1 && fire.keys[0]==="citi|main|2026-11-01|100" && fire.levels[0]==="100","80 already sent");
+const again=M.capAlertsToFire({cardId:"citi",bucket:"main",cycleKey:"2026-11-01",beforeUsed:700,afterUsed:1000,cap:1000,seen:seen.concat(fire.keys)});
+ok(again.keys.length===0,"both thresholds already sent");
+ok(M.guessMcc("FAIRPRICE FINEST SINGAPORE").mcc===5411,"guess fairprice");
+const uobLine=M.parseStatementText("03/11/2026 FAIRPRICE FINEST 45.60 SGD");
+ok(uobLine.length===1 && uobLine[0].date==="2026-11-03" && uobLine[0].amount===45.6,"UOB-like line");
+ok(M.parseStatementText("03 Nov 2026 NTUC FAIRPRICE 12.50")[0].date==="2026-11-03","DBS-like line");
+ok(M.parseStatementText("03NOV26 FAIRPRICE 9.90")[0].amount===9.9,"HSBC-like line");
+ok(M.parseStatementText("03-11-2026 FAIRPRICE 8.00 DR")[0].amount===8,"Maybank-like line");
+const trustCsv=M.parseCsv("Date,Description,Amount,Currency\n2026-11-03,GRAB,12.50,SGD");
+ok(trustCsv.mapped && trustCsv.txns[0].descriptor==="GRAB" && trustCsv.txns[0].amount===12.5,"Trust CSV");
+ok(M.parseCsv("Foo,Bar\n1,2").mapped===false,"CSV needs a mapping");
+const pv=M.reconcileStatement({cardId:"pv",txns:[
+  {date:"2026-11-02",descriptor:"FAIRPRICE",amount:100,mcc:5411,mode:"wallet"},
+  {date:"2026-11-03",descriptor:"IKEA",amount:550,mcc:5712,mode:"wallet"},
+  {date:"2026-11-04",descriptor:"AIA",amount:80,mcc:6300,mode:"wallet"}
+]});
+ok(pv.totalMiles===2420 && pv.bonusMiles===2400 && pv.baseMiles===20 && pv.rows[2].excluded,"PV statement");
+const citiStmt=M.reconcileStatement({cardId:"citi",txns:[
+  {date:"2026-11-02",descriptor:"RESTAURANT",amount:200,mcc:5812,mode:"online"},
+  {date:"2026-11-03",descriptor:"MORE",amount:900,mcc:5812,mode:"online"}
+]});
+ok(citiStmt.totalMiles===4040 && citiStmt.bonusMiles===4000 && citiStmt.baseMiles===40,"Citi statement");
+const hsbcStmt=M.reconcileStatement({cardId:"hsbc",txns:[
+  {date:"2026-11-02",descriptor:"RESTAURANT",amount:200,mcc:5812,mode:"tap"},
+  {date:"2026-11-03",descriptor:"MORE",amount:900,mcc:5812,mode:"tap"}
+]});
+ok(hsbcStmt.totalMiles===4040 && hsbcStmt.rows[1].capHit,"HSBC statement");
+const xlShort=M.reconcileStatement({cardId:"xl",txns:[{date:"2026-11-02",descriptor:"KFC",amount:100,mcc:5814,mode:"tap"}]});
+ok(xlShort.minMet===false && xlShort.totalMiles===40 && xlShort.rows[0].minShort,"XL below minimum");
+const xlOk=M.reconcileStatement({cardId:"xl",txns:[
+  {date:"2026-11-02",descriptor:"KFC",amount:200,mcc:5814,mode:"tap"},
+  {date:"2026-11-03",descriptor:"MCD",amount:400,mcc:5814,mode:"tap"}
+]});
+ok(xlOk.minMet && xlOk.totalMiles===2400 && xlOk.bonusMiles===2400,"XL statement");
+const dbsStmt=M.reconcileStatement({cardId:"dbs",txns:[
+  {date:"2026-11-02",descriptor:"RESTAURANT",amount:200,mcc:5812,mode:"online"},
+  {date:"2026-11-03",descriptor:"MORE",amount:900,mcc:5812,mode:"online"}
+]});
+ok(dbsStmt.totalMiles===4040 && dbsStmt.rows[1].capHit,"DBS statement");
+const lsStmt=M.reconcileStatement({cardId:"ls",txns:[
+  {date:"2026-11-02",descriptor:"DINING",amount:100,mcc:5812,mode:"tap"},
+  {date:"2026-11-03",descriptor:"MORE",amount:700,mcc:5812,mode:"tap"}
+]});
+ok(lsStmt.totalMiles===3020 && lsStmt.bonusMiles===3000 && lsStmt.baseMiles===20 && lsStmt.rows[1].capHit,"Lady's statement");
+const gap=M.explainMilesGap(pv.rows,20,2000);
+ok(gap.delta===-400 && gap.likely.some(r=>r.descriptor==="IKEA") && gap.likely.some(r=>r.descriptor==="AIA"),"shortfall points at cap and exclusion");
+const page=fs.readFileSync(__dirname+"/public/mcc/5651.html","utf8");
+ok(page.includes("Uniqlo") && page.includes("MCC 5651") && page.includes("https://milekaki.com/#5651/tap") && page.includes("milekaki.goatcounter.com/count"),"mcc page");
 console.log("added cards:",M.ADDED.length,"merchants:",M.MERCHANTS.length, "fails:",fail);
 process.exit(fail?1:0);

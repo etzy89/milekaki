@@ -341,6 +341,144 @@
     document.querySelectorAll(".tab").forEach(function (t) { t.hidden = t.id !== "tab-" + b.dataset.tab; });
   });
 
+  // ----- statement reconcile (on device only) -----
+  var stmtTxns = [];
+  var stmtResult = null;
+  var csvState = null;
+  function fcyMode(ccy) { return ccy && ccy !== "SGD" ? "fcy" : "online"; }
+  function fillCardSelect(sel) {
+    var items = MINE.map(function (id) { return { id: id, name: MINE_NAMES[id] }; }).concat(M.ADDED.map(function (a) { return { id: a.id, name: a.name }; }));
+    sel.innerHTML = grouped(items).map(function (g) { return '<optgroup label="' + esc(g.label) + '">' + g.items.map(function (it) { return '<option value="' + it.id + '">' + esc(it.name) + "</option>"; }).join("") + "</optgroup>"; }).join("");
+  }
+  function modeOptions(selected) {
+    return M.MODES.map(function (m) { return '<option value="' + m.value + '"' + (m.value === selected ? " selected" : "") + ">" + esc(m.label) + "</option>"; }).join("");
+  }
+  function renderStmt() {
+    var month = $("rec-month").value;
+    var rows = stmtTxns.filter(function (t) { return !month || String(t.date || "").slice(0, 7) === month; });
+    $("rec-txns").innerHTML = rows.length ? '<table class="recon"><thead><tr><th>Date</th><th>Merchant</th><th>Amount</th><th>MCC</th><th>Mode</th></tr></thead><tbody>' + rows.map(function (t) {
+      var i = stmtTxns.indexOf(t);
+      var conf = t.confidence ? Math.round(t.confidence * 100) + "%" : "";
+      return '<tr><td>' + esc(t.date) + '</td><td>' + esc(t.descriptor) + (t.guessName ? '<div class="meta">' + esc(t.guessName) + (conf ? " · " + conf : "") + "</div>" : "") + '</td><td>' + esc(t.currency || "SGD") + " " + grp(t.amount) + '</td><td><input data-mcc="' + i + '" inputmode="numeric" maxlength="4" value="' + esc(t.mcc || "") + '"></td><td><select data-mode="' + i + '">' + modeOptions(t.mode) + "</select></td></tr>";
+    }).join("") + "</tbody></table>" : '<p class="hint">No transactions for this cycle yet.</p>';
+  }
+  function addParsed(list) {
+    list.forEach(function (t) {
+      if (!(t.amount > 0)) return;
+      var g = M.guessMcc(t.descriptor);
+      var ccy = (t.currency || "SGD").toUpperCase();
+      stmtTxns.push({ date: t.date, descriptor: t.descriptor, amount: t.amount, currency: ccy, mcc: g.mcc || "", confidence: g.confidence, guessName: g.name, mode: fcyMode(ccy) });
+    });
+    stmtResult = null;
+    renderStmt();
+  }
+  function mapSelects(headers) {
+    ["map-date", "map-desc", "map-amt", "map-ccy"].forEach(function (id) {
+      $(id).innerHTML = '<option value="-1">—</option>' + headers.map(function (h, i) { return '<option value="' + i + '">' + esc(h || ("Column " + (i + 1))) + "</option>"; }).join("");
+    });
+  }
+  function readCsv(text) {
+    var parsed = M.parseCsv(text);
+    if (parsed.mapped) { $("rec-map").hidden = true; csvState = null; addParsed(parsed.txns); return; }
+    csvState = { text: text, headers: parsed.headers };
+    mapSelects(parsed.headers.length ? parsed.headers : ["Column 1"]);
+    $("rec-map").hidden = false;
+  }
+  async function readPdf(buf) {
+    var pdfjs = await import("./vendor/pdfjs/pdf.min.mjs");
+    pdfjs.GlobalWorkerOptions.workerSrc = "vendor/pdfjs/pdf.worker.min.mjs";
+    var doc = await pdfjs.getDocument({ data: buf }).promise;
+    var text = "";
+    for (var p = 1; p <= doc.numPages; p++) {
+      var page = await doc.getPage(p);
+      var content = await page.getTextContent();
+      var line = "", lastY = null;
+      content.items.forEach(function (item) {
+        var y = item.transform ? item.transform[5] : 0;
+        if (lastY != null && Math.abs(y - lastY) > 2) { text += line + "\n"; line = ""; }
+        line += item.str + " ";
+        lastY = y;
+      });
+      text += line + "\n";
+    }
+    return text;
+  }
+  fillCardSelect($("rec-card"));
+  $("rec-month").value = iso(new Date()).slice(0, 7);
+  $("rec-file").addEventListener("change", function () {
+    var file = $("rec-file").files && $("rec-file").files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    if (/\.pdf$/i.test(file.name) || file.type === "application/pdf") {
+      reader.onload = function () {
+        readPdf(new Uint8Array(reader.result)).then(function (text) { addParsed(M.parseStatementText(text)); }).catch(function () { alert("Could not read that PDF. Paste the text instead."); });
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      reader.onload = function () { readCsv(String(reader.result || "")); };
+      reader.readAsText(file);
+    }
+  });
+  $("rec-parse").addEventListener("click", function () { addParsed(M.parseStatementText($("rec-paste").value)); });
+  $("rec-map-apply").addEventListener("click", function () {
+    if (!csvState) return;
+    var parsed = M.parseCsv(csvState.text, { date: +$("map-date").value, desc: +$("map-desc").value, amount: +$("map-amt").value, currency: +$("map-ccy").value, credit: -1 });
+    addParsed(parsed.txns);
+  });
+  $("rec-add").addEventListener("click", function () {
+    var amount = parseFloat($("rec-amt").value);
+    if (!($("rec-date").value && $("rec-desc").value && amount > 0)) return;
+    addParsed([{ date: $("rec-date").value, descriptor: $("rec-desc").value, amount: amount, currency: ($("rec-ccy").value || "SGD").toUpperCase() }]);
+    $("rec-desc").value = ""; $("rec-amt").value = "";
+  });
+  $("rec-txns").addEventListener("input", function (e) {
+    var i = e.target.dataset.mcc;
+    if (i == null) return;
+    stmtTxns[+i].mcc = e.target.value.replace(/\D/g, "").slice(0, 4);
+    stmtTxns[+i].confidence = 1;
+  });
+  $("rec-txns").addEventListener("change", function (e) {
+    var i = e.target.dataset.mode;
+    if (i == null) return;
+    stmtTxns[+i].mode = e.target.value;
+  });
+  $("rec-month").addEventListener("change", renderStmt);
+  $("rec-calc").addEventListener("click", function () {
+    var month = $("rec-month").value;
+    var txns = stmtTxns.filter(function (t) { return !month || String(t.date).slice(0, 7) === month; }).map(function (t) {
+      return { date: t.date, descriptor: t.descriptor, amount: t.amount, currency: t.currency, mcc: parseInt(t.mcc, 10) || 0, mode: t.mode };
+    });
+    stmtResult = M.reconcileStatement({ cardId: $("rec-card").value, txns: txns, ls: settings.ls });
+    var r = stmtResult;
+    $("rec-out").innerHTML = '<p><b>' + grp(r.totalMiles) + " miles</b> · bonus " + grp(r.bonusMiles) + " · base " + grp(r.baseMiles) + (r.minMet ? "" : " · minimum spend not met, bonus withheld") + "</p>" +
+      '<table class="recon"><thead><tr><th>Merchant</th><th>Split</th><th>Miles</th></tr></thead><tbody>' + r.rows.map(function (row) {
+        return "<tr><td>" + esc(row.descriptor) + '<div class="meta">MCC ' + (row.mcc || "—") + "</div></td><td>" + esc(row.breakdown || "—") + (row.reasons.length ? '<div class="meta warn">' + esc(row.reasons.join("; ")) + "</div>" : "") + "</td><td>" + grp(row.miles) + "</td></tr>";
+      }).join("") + "</tbody></table>";
+  });
+  $("rec-gap").addEventListener("click", function () {
+    if (!stmtResult) { $("rec-calc").click(); }
+    if (!stmtResult) return;
+    var gap = M.explainMilesGap(stmtResult.rows, parseFloat($("rec-base").value) || 0, parseFloat($("rec-bonus").value) || 0);
+    var word = gap.delta < -0.01 ? "shortfall" : gap.delta > 0.01 ? "surplus" : "match";
+    $("rec-gap").innerHTML = "<p><b>" + esc(word) + "</b> · expected " + grp(gap.expected) + " (bonus " + grp(gap.expectedBonus) + " + base " + grp(gap.expectedBase) + "), credited " + grp(gap.credited) + ", difference " + grp(gap.delta) + ".</p>" +
+      (gap.likely.length ? "<p>Most likely causes:</p><ul class=\"log\">" + gap.likely.slice(0, 8).map(function (row) { return "<li><span>" + esc(row.descriptor) + " · " + esc(row.reasons.join("; ")) + "</span></li>"; }).join("") + "</ul>" : "");
+  });
+  $("rec-save").addEventListener("click", function () {
+    if (!stmtResult) return;
+    var card = $("rec-card").value;
+    stmtResult.rows.forEach(function (row) {
+      log.push({ id: Date.now() + Math.random().toString(36).slice(2, 6), card: card, amt: row.amount, date: row.date, mcc: row.mcc ? String(row.mcc) : "", bucket: row.bonusMiles > 0 ? row.bucket : "" });
+    });
+    persist();
+    renderAll();
+    alert("Saved " + stmtResult.rows.length + " transactions into the Caps log on this device.");
+  });
+  $("rec-clear").addEventListener("click", function () {
+    stmtTxns = []; stmtResult = null; csvState = null;
+    $("rec-paste").value = ""; $("rec-file").value = ""; $("rec-out").innerHTML = ""; $("rec-gap").innerHTML = ""; $("rec-map").hidden = true;
+    renderStmt();
+  });
+
   function renderAll() { renderLookup(); renderTrack(); renderSettings(); }
   $("sources").innerHTML = SOURCES.map(function (s) { return '<li><a href="' + esc(s.href) + '" target="_blank" rel="noopener">' + esc(s.title) + "</a> · " + esc(s.site) + (s.date ? " · " + esc(s.date) : "") + "</li>"; }).join("");
   var h = location.hash.slice(1).split("/");

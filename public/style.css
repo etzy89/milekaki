@@ -65,6 +65,12 @@ h3{font-size:13px;color:var(--mut);margin:12px 0 4px;text-transform:uppercase;le
 .banners{max-width:640px;margin:0 auto;padding:8px 16px 0}
 .banner{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#3f2e12;border:1px solid var(--amb);color:var(--tx);border-radius:12px;padding:10px 12px;margin-bottom:8px;font-size:14px}
 .banner button{background:none;border:0;color:var(--tx);font-size:16px}
+.priv{color:var(--b)}
+textarea,input[type=file],input[type=month]{width:100%;font-size:16px;padding:10px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--tx)}
+.recon{width:100%;border-collapse:collapse;font-size:13px;margin:10px 0}
+.recon th,.recon td{text-align:left;padding:6px 4px;border-bottom:1px solid var(--line);vertical-align:top}
+.recon input,.recon select{width:100%;font-size:13px;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--tx)}
+#rec-save,#rec-clear,#rec-gap,#rec-map-apply,#rec-add{margin-top:8px}
 .capcard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px}
 .bar{margin-top:8px}
 .barl{display:flex;justify-content:space-between;font-size:12px;color:var(--mut)}

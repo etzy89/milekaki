@@ -30,3 +30,7 @@ TODO: Ernest must create the GoatCounter site `milekaki` at https://www.goatcoun
 ## MCC pages
 
 `node scripts/build-mcc-pages.js` writes `public/mcc/<code>.html` for each merchant MCC and refreshes `public/sitemap.xml`. Run it after rebuilding the engine. Those pages are not in the service worker's precache.
+
+## Reconcile
+
+The Reconcile tab reads a statement on this device only: CSV, pasted text, a PDF via the vendored pdf.js build in `public/vendor/pdfjs/`, or a row you type. Nothing is stored unless you choose "Save these into the Caps log". Delete statement clears the on-screen copy. Your statement never leaves your phone.

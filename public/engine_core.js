@@ -48,10 +48,15 @@ var MCCX = (() => {
     blockOf: () => blockOf,
     capAlertsToFire: () => capAlertsToFire,
     capThresholds: () => capThresholds,
+    explainMilesGap: () => explainMilesGap,
+    guessMcc: () => guessMcc,
     kind: () => kind,
     lookup: () => lookup,
     lookupAll: () => lookupAll,
+    parseCsv: () => parseCsv,
+    parseStatementText: () => parseStatementText,
     quoteEarn: () => quoteEarn,
+    reconcileStatement: () => reconcileStatement,
     referralFor: () => referralFor,
     searchMerchants: () => searchMerchants,
     splitPlan: () => splitPlan
@@ -818,6 +823,274 @@ var MCCX = (() => {
     const seen = o.seen || [];
     const keys = capThresholds(o.beforeUsed, o.afterUsed, o.cap).map((lv) => [o.cardId, o.bucket, o.cycleKey, lv].join("|")).filter((k) => seen.indexOf(k) < 0);
     return { levels: keys.map((k) => k.split("|").pop() || ""), keys };
+  }
+  const STOP_WORD = { CARD: true, SINGAPORE: true, PAYMENT: true, PURCHASE: true, VISA: true, DEBIT: true, CREDIT: true, POS: true, SGD: true, THE: true, AND: true };
+  function normDesc(s) {
+    return String(s || "").toUpperCase().replace(/[^A-Z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+  }
+  function guessMcc(descriptor) {
+    const d = normDesc(descriptor);
+    let best = { mcc: 0, confidence: 0, name: "" };
+    if (d.length < 3) return best;
+    for (let i = 0; i < MERCHANTS.length; i++) {
+      const m = MERCHANTS[i];
+      if (!(m.m >= 1e3)) continue;
+      const name = normDesc(m.n);
+      if (name.length >= 4 && d.indexOf(name) >= 0) {
+        const conf = Math.min(0.95, 0.75 + name.length / 80);
+        if (conf > best.confidence) best = { mcc: m.m, confidence: r2(conf), name: m.n };
+        continue;
+      }
+      const words = name.split(" ").filter((w) => w.length >= 4 && !STOP_WORD[w]);
+      for (let w = 0; w < words.length; w++) {
+        if (d.indexOf(words[w]) < 0) continue;
+        const conf = words[w].length >= 8 ? 0.82 : 0.58;
+        if (conf > best.confidence) best = { mcc: m.m, confidence: conf, name: m.n };
+      }
+    }
+    return best;
+  }
+  function parseIsoDate(s) {
+    const t = String(s || "").trim();
+    const months = { JAN: "01", FEB: "02", MAR: "03", APR: "04", MAY: "05", JUN: "06", JUL: "07", AUG: "08", SEP: "09", OCT: "10", NOV: "11", DEC: "12" };
+    let m = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return m[1] + "-" + m[2] + "-" + m[3];
+    m = t.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+    if (m) {
+      let y = parseInt(m[3], 10);
+      if (y < 100) y += 2e3;
+      return String(y) + "-" + String(m[2]).padStart(2, "0") + "-" + String(m[1]).padStart(2, "0");
+    }
+    m = t.match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{2,4})$/);
+    if (m && months[m[2].toUpperCase()]) {
+      let y = parseInt(m[3], 10);
+      if (y < 100) y += 2e3;
+      return String(y) + "-" + months[m[2].toUpperCase()] + "-" + String(m[1]).padStart(2, "0");
+    }
+    m = t.match(/^(\d{2})([A-Za-z]{3})(\d{2,4})$/);
+    if (m && months[m[2].toUpperCase()]) {
+      let y = parseInt(m[3], 10);
+      if (y < 100) y += 2e3;
+      return String(y) + "-" + months[m[2].toUpperCase()] + "-" + m[1];
+    }
+    return "";
+  }
+  function parseMoney(s) {
+    let t = String(s || "").trim();
+    if (!t) return NaN;
+    let neg = /^\(.*\)$/.test(t) || /cr$/i.test(t);
+    t = t.replace(/[()]/g, "").replace(/sgd|s\$|\$/ig, "").replace(/,/g, "").replace(/\s*(dr|cr)\s*$/i, "").trim();
+    const n = parseFloat(t);
+    if (!isFinite(n)) return NaN;
+    return neg ? -Math.abs(n) : n;
+  }
+  function parseLooseLine(line) {
+    const dateRe = /(\d{4}-\d{2}-\d{2}|\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}|\d{1,2}\s+[A-Za-z]{3}\s+\d{2,4}|\d{2}[A-Za-z]{3}\d{2,4})/;
+    const amtRe = /(-?\(?\d{1,3}(?:,\d{3})*\.\d{2}\)?)(?:\s*(SGD|USD|EUR|GBP|JPY|AUD|MYR|THB|IDR))?(?:\s*(DR|CR))?\s*$/i;
+    const dm = line.match(dateRe);
+    const am = line.match(amtRe);
+    if (!dm || !am || dm.index == null || am.index == null || am.index <= dm.index) return null;
+    const date = parseIsoDate(dm[1]);
+    const amount = parseMoney(am[1] + (am[3] ? " " + am[3] : ""));
+    if (!date || !isFinite(amount)) return null;
+    const descriptor = line.slice(dm.index + dm[1].length, am.index).replace(/\s+/g, " ").trim();
+    if (descriptor.length < 2) return null;
+    return { date, descriptor, amount, currency: (am[2] || "SGD").toUpperCase() };
+  }
+  function parseStatementText(text) {
+    const out = [];
+    const lines = String(text || "").split(/\r?\n/);
+    for (let i = 0; i < lines.length; i++) {
+      const txn = parseLooseLine(lines[i].trim());
+      if (txn && txn.amount > 0) out.push(txn);
+    }
+    return out;
+  }
+  function csvDelim(line) {
+    const c = (line.match(/,/g) || []).length;
+    const t = (line.match(/\t/g) || []).length;
+    const s = (line.match(/;/g) || []).length;
+    if (t > c && t >= s) return "	";
+    if (s > c) return ";";
+    return ",";
+  }
+  function splitDelimLine(line, delim) {
+    const out = [];
+    let cur = "";
+    let q = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (q) {
+        if (c === '"') {
+          if (line[i + 1] === '"') {
+            cur += '"';
+            i++;
+          } else q = false;
+        } else cur += c;
+      } else if (c === '"') q = true;
+      else if (c === delim) {
+        out.push(cur.trim());
+        cur = "";
+      } else cur += c;
+    }
+    out.push(cur.trim());
+    return out;
+  }
+  function headerIndex(headers, names) {
+    for (let i = 0; i < headers.length; i++) if (names.indexOf(headers[i].toLowerCase()) >= 0) return i;
+    return -1;
+  }
+  function parseCsv(text, map) {
+    const lines = String(text || "").split(/\r?\n/).filter((l) => l.trim().length > 0);
+    if (!lines.length) return { headers: [], rows: [], mapped: false, txns: [] };
+    const delim = csvDelim(lines[0]);
+    const table = lines.map((l) => splitDelimLine(l, delim));
+    const headers = table[0].map((h) => h.replace(/^\uFEFF/, ""));
+    const body = table.slice(1);
+    const dateNames = ["date", "transaction date", "trans date", "posting date", "txn date", "value date"];
+    const descNames = ["description", "merchant", "narrative", "details", "transaction details", "transaction description", "particulars"];
+    const amtNames = ["amount", "transaction amount", "debit amount", "debit", "withdrawal", "sgd amount"];
+    const ccyNames = ["currency", "ccy", "transaction currency"];
+    const crNames = ["credit", "deposit"];
+    const auto = {
+      date: headerIndex(headers, dateNames),
+      desc: headerIndex(headers, descNames),
+      amount: headerIndex(headers, amtNames),
+      currency: headerIndex(headers, ccyNames),
+      credit: headerIndex(headers, crNames)
+    };
+    const use = map || auto;
+    const mapped = use.date >= 0 && use.desc >= 0 && (use.amount >= 0 || use.credit >= 0);
+    const txns = [];
+    if (mapped) {
+      for (let i = 0; i < body.length; i++) {
+        const row = body[i];
+        const date = parseIsoDate(row[use.date] || "");
+        const descriptor = (row[use.desc] || "").trim();
+        let amount = use.amount >= 0 ? parseMoney(row[use.amount] || "") : NaN;
+        if (!isFinite(amount) && use.credit >= 0) amount = -Math.abs(parseMoney(row[use.credit] || "") || 0);
+        const currency = use.currency >= 0 ? (row[use.currency] || "SGD").toUpperCase() : "SGD";
+        if (date && descriptor && amount > 0) txns.push({ date, descriptor, amount, currency: currency || "SGD" });
+      }
+    }
+    return { headers, rows: body, mapped: !!(map ? mapped : auto.date >= 0 && auto.desc >= 0 && (auto.amount >= 0 || auto.credit >= 0)), txns };
+  }
+  function reconcileStatement(input) {
+    const meta = META.filter((m) => m.id === input.cardId)[0];
+    const ls = input.ls && input.ls.length ? input.ls : ["dining", "travel"];
+    const block = blockOf(input.cardId);
+    const txns = (input.txns || []).filter((t) => t && t.amount > 0).slice().sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+    const rated = txns.map((t) => {
+      const res = lookupAll(t.mcc || 0, t.mode, { ls }).filter((r) => r.id === input.cardId)[0];
+      return { t, res };
+    });
+    const min = meta ? meta.min : 0;
+    const minScope = meta ? meta.minScope : "";
+    let minSpend = 0;
+    for (let i = 0; i < rated.length; i++) {
+      const res = rated[i].res;
+      if (minScope === "bucket") {
+        if (res && res.bucket && res.mpd > res.base) minSpend += rated[i].t.amount;
+      } else minSpend += rated[i].t.amount;
+    }
+    const minMet = !(min > 0) || minSpend + 1e-9 >= min;
+    const used = {};
+    const rows = [];
+    for (let i = 0; i < rated.length; i++) {
+      const t = rated[i].t;
+      const res = rated[i].res;
+      const mpd = res ? res.mpd : 0;
+      const base = res ? res.base : 0;
+      const bucket = res && res.bucket ? res.bucket : "";
+      const cap = meta && bucket && meta.caps[bucket] ? meta.caps[bucket] : null;
+      if (mpd === 0) {
+        rows.push({
+          date: t.date,
+          descriptor: t.descriptor,
+          amount: t.amount,
+          mcc: t.mcc || 0,
+          mode: t.mode,
+          mpd: 0,
+          base,
+          bucket: "",
+          how: res ? res.how : "No miles",
+          miles: 0,
+          bonusMiles: 0,
+          baseMiles: 0,
+          breakdown: "0 miles",
+          capHit: false,
+          minShort: false,
+          roundedOff: 0,
+          excluded: true,
+          reasons: !t.mcc ? ["MCC not confirmed", "MCC excluded"] : ["MCC excluded"]
+        });
+        continue;
+      }
+      const q = quoteEarn({
+        amount: t.amount,
+        mpd,
+        base,
+        cap,
+        used: bucket ? used[bucket] || 0 : 0,
+        spent: 0,
+        min: minMet ? 0 : Math.max(min, t.amount + 1),
+        block: block.block,
+        blockApprox: block.approx,
+        blockWhy: block.why,
+        rateApprox: !!(res && res.flag),
+        capUnmodelled: false
+      });
+      let bonusMiles2 = 0, baseMiles2 = 0;
+      for (let p = 0; p < q.parts.length; p++) {
+        const part = q.parts[p];
+        const miles = r2(part.amt * part.mpd);
+        if (part.mpd > base) bonusMiles2 += miles;
+        else baseMiles2 += miles;
+      }
+      bonusMiles2 = r2(bonusMiles2);
+      baseMiles2 = r2(baseMiles2);
+      const reasons = [];
+      if (!t.mcc) reasons.push("MCC not confirmed");
+      if (mpd === 0) reasons.push("MCC excluded");
+      if (q.roundedOff > 0) reasons.push("Under the earn block");
+      if (q.capHit) reasons.push("Over the bonus cap");
+      if (q.minShort) reasons.push("Minimum spend for the cycle was not met");
+      if (res && res.bucket && mpd > base && !q.minShort) used[bucket] = r2((used[bucket] || 0) + t.amount);
+      rows.push({
+        date: t.date,
+        descriptor: t.descriptor,
+        amount: t.amount,
+        mcc: t.mcc || 0,
+        mode: t.mode,
+        mpd,
+        base,
+        bucket,
+        how: res ? res.how : "",
+        miles: q.miles,
+        bonusMiles: bonusMiles2,
+        baseMiles: baseMiles2,
+        breakdown: q.breakdown,
+        capHit: q.capHit,
+        minShort: q.minShort,
+        roundedOff: q.roundedOff,
+        excluded: mpd === 0,
+        reasons
+      });
+    }
+    const bonusMiles = r2(rows.reduce((s, r) => s + r.bonusMiles, 0));
+    const baseMiles = r2(rows.reduce((s, r) => s + r.baseMiles, 0));
+    return { rows, totalMiles: r2(bonusMiles + baseMiles), bonusMiles, baseMiles, minMet };
+  }
+  function explainMilesGap(rows, creditedBase, creditedBonus) {
+    const expectedBase = r2(rows.reduce((s, r) => s + r.baseMiles, 0));
+    const expectedBonus = r2(rows.reduce((s, r) => s + r.bonusMiles, 0));
+    const expected = r2(expectedBase + expectedBonus);
+    const credited = r2((creditedBase || 0) + (creditedBonus || 0));
+    const likely = rows.filter((r) => r.reasons.length > 0).slice().sort((a, b) => {
+      const lost = (r) => Math.max(0, r.amount * (r.mpd > r.base ? r.mpd : r.base) - r.miles);
+      return lost(b) - lost(a);
+    });
+    return { expected, expectedBase, expectedBonus, credited, delta: r2(credited - expected), likely };
   }
   function searchMerchants(q) {
     const s = q.trim().toLowerCase();

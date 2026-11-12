@@ -32,6 +32,7 @@
   <nav class="tabs" role="tablist">
     <button data-tab="lookup" aria-selected="true">Lookup</button>
     <button data-tab="track">Caps</button>
+    <button data-tab="reconcile">Reconcile</button>
     <button data-tab="settings">Settings</button>
     <button data-tab="cards">Cards</button>
   </nav>
@@ -73,6 +74,57 @@
     <div id="caps"></div>
     <h2>Entries</h2>
     <ul id="log" class="log"></ul>
+  </section>
+
+  <section id="tab-reconcile" class="tab" hidden>
+    <p class="hint priv">Your statement never leaves your phone.</p>
+    <h2>Statement</h2>
+    <div class="row2">
+      <div>
+        <label for="rec-card" class="lbl">Card</label>
+        <select id="rec-card" aria-label="Card"></select>
+      </div>
+      <div>
+        <label for="rec-month" class="lbl">Statement cycle</label>
+        <input id="rec-month" type="month" aria-label="Statement cycle">
+      </div>
+    </div>
+    <label class="lbl" for="rec-file">CSV or PDF</label>
+    <input id="rec-file" type="file" accept=".csv,.txt,.pdf,text/csv,application/pdf">
+    <label class="lbl" for="rec-paste">Or paste text</label>
+    <textarea id="rec-paste" rows="4" placeholder="03/11/2026 FAIRPRICE 45.60 SGD"></textarea>
+    <button id="rec-parse" class="primary" type="button">Read statement</button>
+    <div id="rec-map" class="capcard" hidden>
+      <p class="hint">This CSV needs a column mapping.</p>
+      <div class="row2">
+        <label>Date <select id="map-date"></select></label>
+        <label>Merchant <select id="map-desc"></select></label>
+        <label>Amount <select id="map-amt"></select></label>
+        <label>Currency <select id="map-ccy"></select></label>
+      </div>
+      <button id="rec-map-apply" type="button">Apply columns</button>
+    </div>
+    <h2>Add one transaction</h2>
+    <div class="form">
+      <input id="rec-date" type="date" aria-label="Date">
+      <input id="rec-desc" type="text" placeholder="Merchant" aria-label="Merchant">
+      <input id="rec-amt" type="text" inputmode="decimal" placeholder="Amount" aria-label="Amount">
+      <input id="rec-ccy" type="text" value="SGD" maxlength="3" aria-label="Currency">
+      <button id="rec-add" type="button">Add</button>
+    </div>
+    <div id="rec-txns"></div>
+    <button id="rec-calc" class="primary" type="button">Calculate expected miles</button>
+    <div id="rec-out"></div>
+    <h2>What the bank credited</h2>
+    <div class="row2">
+      <div><label class="lbl" for="rec-base">Base miles</label><input id="rec-base" type="text" inputmode="decimal" placeholder="0"></div>
+      <div><label class="lbl" for="rec-bonus">Bonus miles</label><input id="rec-bonus" type="text" inputmode="decimal" placeholder="0"></div>
+    </div>
+    <button id="rec-gap" type="button">Compare</button>
+    <div id="rec-gap"></div>
+    <p class="hint">Bonus crediting timing differs by bank. Some post with the transaction, others on the next statement, so a shortfall can just mean the bonus has not posted yet.</p>
+    <button id="rec-save" type="button">Save these into the Caps log</button>
+    <button id="rec-clear" type="button">Delete statement</button>
   </section>
 
   <section id="tab-settings" class="tab" hidden>
