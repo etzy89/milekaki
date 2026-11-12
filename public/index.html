@@ -130,8 +130,16 @@
   <section id="tab-settings" class="tab" hidden>
     <h2>Cards I hold</h2>
     <div id="held" class="held"></div>
-    <h2>UOB Lady's Solitaire categories</h2>
-    <div class="row2"><select id="ls1" aria-label="Category 1"></select><select id="ls2" aria-label="Category 2"></select></div>
+    <div id="ls-block" hidden>
+      <h2>UOB Lady's Solitaire categories</h2>
+      <div class="row2"><select id="ls1" aria-label="Solitaire category 1"></select><select id="ls2" aria-label="Solitaire category 2"></select></div>
+      <p class="hint">Two categories. Bonus cap S$750 per category per calendar month.</p>
+    </div>
+    <div id="ladys-block" hidden>
+      <h2>UOB Lady's Card category</h2>
+      <select id="ladys" aria-label="Lady's Card category"></select>
+      <p class="hint">One category. Bonus cap S$1,000 per calendar month.</p>
+    </div>
     <h2>Statement dates</h2>
     <p class="hint">Day of month your statement is generated. Used for cards whose bonus cap runs by statement month. Left blank, the calendar month is used.</p>
     <div id="stmt"></div>

@@ -118,7 +118,7 @@ const SUMMARY: TableCell[][] = [
 // ===== ENGINE (shared verbatim between the Grok Page and the MileKaki app) =====
 type Mode = "tap" | "chip" | "wallet" | "online" | "fcy" | "fcyon";
 type Res = { id: string; group: string; card: string; mpd: number; base: number; bucket: string; how: string; cap: string; note: string; kf: string; flag: boolean; added: boolean };
-type Opts = { ls?: string[]; tags?: string[] };
+type Opts = { ls?: string[]; ladys?: string; tags?: string[] };
 
 const MODES: { value: Mode; label: string }[] = [
   { value: "tap", label: "Contactless card" },
@@ -374,8 +374,12 @@ function rAdded(a: Added, n: number, m: Mode, o: Opts): Res | null {
   if (n <= 0) return base === null ? null : mk(base, "", "General rate (no single MCC)", "", false);
   if (COMMON_X(n)) return mk(0, "", NONE, "Quasi-cash, transfers and top-ups are excluded", false, "—");
   if (a.id === "uobladys") {
-    const hit = LS_CATS.filter((c: { key: string; label: string; set: (n: number) => boolean }) => c.set(n)).map((c: { key: string; label: string; set: (n: number) => boolean }) => c.label);
-    if (!UOB_X(n) && hit.length) return mk(4, "main", `If ${hit.join(" or ")} is your chosen category`, "", false);
+    if (UOB_X(n)) return mk(0, "", NONE, "On UOB's exclusion list", false, "—");
+    const chosen = typeof o.ladys === "string" ? o.ladys : "";
+    const cat = LS_CATS.filter((c: { key: string; label: string; set: (n: number) => boolean }) => c.key === chosen)[0];
+    if (cat && cat.set(n)) return mk(4, cat.key, `Your ${cat.label} category (any channel)`, "UOB Lady's Cards T&Cs v1.1 (Aug 2025): one category", false, "S$1,000/cal. month");
+    const other = LS_CATS.filter((c: { key: string; label: string; set: (n: number) => boolean }) => c.set(n)).map((c: { key: string; label: string; set: (n: number) => boolean }) => c.label);
+    return mk(0.4, "", chosen ? "Not your chosen category: base" : "No category selected: base", other.length ? `Would earn 4 mpd if you picked ${other.join(" or ")}` : "", false, "—");
   }
   for (const b of a.bonuses) {
     if (!b.mcc || !S(b.mcc)(n)) continue;
@@ -412,7 +416,7 @@ function tagOverride(r: Res, o: Opts, m: Mode): Res {
 
 // Returns every card (Ernest's 8 + Citi+Amaze + added cards), best headline mpd first. n = 0 means "no single MCC".
 function lookupAll(n: number, m: Mode, o: Opts = {}): Res[] {
-  const ls = o.ls && o.ls.length ? o.ls : ["dining", "travel"];
+  const ls = o.ls === undefined ? ["dining", "travel"] : o.ls;
   const mine: Res[] = [rPV(n, m), rVS(n, m), rCiti(n, m, false), rCiti(n, m, true), rDBS(n, m), rLS(n, ls), rHSBC(n, m), rTrust(n), rXL(n, m)].map((r: Res) => tagOverride(r, o, m));
   const citi = mine[2], amz = mine[3];
   const keep = mine.filter((r: Res) => r.id !== "citiamaze" || amz.mpd !== citi.mpd || amz.flag !== citi.flag);
@@ -449,7 +453,7 @@ const META: Meta[] = [
   { id: "ocbcrewards", name: "OCBC Rewards", group: "ocbcrewards", cycle: "cal", caps: { main: 1110, six: 1000 }, min: 0, minScope: "", held: false },
   { id: "dbsyuu", name: "DBS yuu", group: "dbsyuu", cycle: "cal", caps: { main: 822 }, min: 800, minScope: "all", held: false },
   { id: "scsmart", name: "StanChart Smart", group: "scsmart", cycle: "stmt", caps: {}, min: 1500, minScope: "all", held: false },
-  { id: "uobladys", name: "UOB Lady's Card", group: "uobladys", cycle: "cal", caps: { main: 1000 }, min: 0, minScope: "", held: false },
+  { id: "uobladys", name: "UOB Lady's Card", group: "uobladys", cycle: "cal", caps: { dining: 1000, travel: 1000, fashion: 1000, family: 1000, transport: 1000, beauty: 1000, entertainment: 1000 }, min: 0, minScope: "", held: false },
   { id: "maybankhorizon", name: "Maybank Horizon VS", group: "maybankhorizon", cycle: "cal", caps: { air: 10000 }, min: 800, minScope: "all", held: false },
 ];
 
@@ -526,6 +530,7 @@ function blockOf(id: string): BlockInfo {
     pv: { block: 5, approx: false, why: "UNI$ per S$5, per transaction" },
     vs: { block: 5, approx: false, why: "UNI$ per S$5, per transaction" },
     ls: { block: 5, approx: false, why: "UNI$ per S$5, per transaction" },
+    uobladys: { block: 5, approx: false, why: "UNI$ per S$5, per transaction" },
     citi: { block: 1, approx: false, why: "Per S$1, per transaction" },
     citiamaze: { block: 1, approx: false, why: "Per S$1, per transaction" },
     hsbc: { block: 1, approx: false, why: "Rounded down to S$1" },
@@ -682,6 +687,14 @@ function referralFor(id: string): { url: string; label: string; disclosure: stri
 }
 
 // Cap alerts: which thresholds a new logged amount crosses. Fires once per key; caller stores keys.
+function ladySettings(saved?: { ls?: string[]; ladys?: string }): { ls: string[]; ladys: string } {
+  const keys = LS_CATS.map((c: { key: string }) => c.key);
+  const given = saved && saved.ls ? saved.ls : [];
+  const ls = given.length === 2 && given[0] !== given[1] && keys.indexOf(given[0]) >= 0 && keys.indexOf(given[1]) >= 0 ? given.slice(0, 2) : ["dining", "travel"];
+  const ladys = saved && keys.indexOf(saved.ladys || "") >= 0 ? (saved.ladys as string) : ls[0];
+  return { ls, ladys };
+}
+
 function capThresholds(beforeUsed: number, afterUsed: number, cap: number): string[] {
   if (!(cap > 0)) return [];
   const before = (beforeUsed / cap) * 100;
@@ -861,13 +874,13 @@ function parseCsv(text: string, map?: { date: number; desc: number; amount: numb
   return { headers, rows: body, mapped: !!(map ? mapped : auto.date >= 0 && auto.desc >= 0 && (auto.amount >= 0 || auto.credit >= 0)), txns };
 }
 
-function reconcileStatement(input: { cardId: string; txns: ReconTxn[]; ls?: string[] }): ReconResult {
+function reconcileStatement(input: { cardId: string; txns: ReconTxn[]; ls?: string[]; ladys?: string }): ReconResult {
   const meta = META.filter((m: Meta) => m.id === input.cardId)[0];
-  const ls = input.ls && input.ls.length ? input.ls : ["dining", "travel"];
+  const ls = input.ls === undefined ? ["dining", "travel"] : input.ls;
   const block = blockOf(input.cardId);
   const txns = (input.txns || []).filter((t: ReconTxn) => t && t.amount > 0).slice().sort((a: ReconTxn, b: ReconTxn) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
   const rated = txns.map((t: ReconTxn) => {
-    const res = lookupAll(t.mcc || 0, t.mode, { ls }).filter((r: Res) => r.id === input.cardId)[0];
+    const res = lookupAll(t.mcc || 0, t.mode, { ls, ladys: input.ladys }).filter((r: Res) => r.id === input.cardId)[0];
     return { t, res };
   });
   const min = meta ? meta.min : 0;
@@ -947,5 +960,5 @@ function searchMerchants(q: string): Merchant[] {
 }
 // ===== END APP DATA =====
 
-export { ROWS, CARDS, SUMMARY, GROUPS, MODES, LS_CATS, ADDED, META, MERCHANTS, REFERRALS, lookup, lookupAll, kind, searchMerchants, blockOf, quoteEarn, splitPlan, referralFor, capThresholds, capAlertsToFire, guessMcc, parseStatementText, parseCsv, reconcileStatement, explainMilesGap };
+export { ROWS, CARDS, SUMMARY, GROUPS, MODES, LS_CATS, ADDED, META, MERCHANTS, REFERRALS, lookup, lookupAll, kind, searchMerchants, blockOf, quoteEarn, splitPlan, referralFor, capThresholds, capAlertsToFire, guessMcc, parseStatementText, parseCsv, reconcileStatement, explainMilesGap, ladySettings };
 export type { Mode, Res, Opts, Merchant, Meta, Added, Quote, QuoteIn, SplitPlan, SplitCard };

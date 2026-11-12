@@ -51,6 +51,7 @@ var MCCX = (() => {
     explainMilesGap: () => explainMilesGap,
     guessMcc: () => guessMcc,
     kind: () => kind,
+    ladySettings: () => ladySettings,
     lookup: () => lookup,
     lookupAll: () => lookupAll,
     parseCsv: () => parseCsv,
@@ -380,8 +381,12 @@ var MCCX = (() => {
     if (n <= 0) return base === null ? null : mk(base, "", "General rate (no single MCC)", "", false);
     if (COMMON_X(n)) return mk(0, "", NONE, "Quasi-cash, transfers and top-ups are excluded", false, "\u2014");
     if (a.id === "uobladys") {
-      const hit = LS_CATS.filter((c) => c.set(n)).map((c) => c.label);
-      if (!UOB_X(n) && hit.length) return mk(4, "main", `If ${hit.join(" or ")} is your chosen category`, "", false);
+      if (UOB_X(n)) return mk(0, "", NONE, "On UOB's exclusion list", false, "\u2014");
+      const chosen = typeof o.ladys === "string" ? o.ladys : "";
+      const cat = LS_CATS.filter((c) => c.key === chosen)[0];
+      if (cat && cat.set(n)) return mk(4, cat.key, `Your ${cat.label} category (any channel)`, "UOB Lady's Cards T&Cs v1.1 (Aug 2025): one category", false, "S$1,000/cal. month");
+      const other = LS_CATS.filter((c) => c.set(n)).map((c) => c.label);
+      return mk(0.4, "", chosen ? "Not your chosen category: base" : "No category selected: base", other.length ? `Would earn 4 mpd if you picked ${other.join(" or ")}` : "", false, "\u2014");
     }
     for (const b of a.bonuses) {
       if (!b.mcc || !S(b.mcc)(n)) continue;
@@ -415,7 +420,7 @@ var MCCX = (() => {
     return r;
   }
   function lookupAll(n, m, o = {}) {
-    const ls = o.ls && o.ls.length ? o.ls : ["dining", "travel"];
+    const ls = o.ls === void 0 ? ["dining", "travel"] : o.ls;
     const mine = [rPV(n, m), rVS(n, m), rCiti(n, m, false), rCiti(n, m, true), rDBS(n, m), rLS(n, ls), rHSBC(n, m), rTrust(n), rXL(n, m)].map((r) => tagOverride(r, o, m));
     const citi = mine[2], amz = mine[3];
     const keep = mine.filter((r) => r.id !== "citiamaze" || amz.mpd !== citi.mpd || amz.flag !== citi.flag);
@@ -447,7 +452,7 @@ var MCCX = (() => {
     { id: "ocbcrewards", name: "OCBC Rewards", group: "ocbcrewards", cycle: "cal", caps: { main: 1110, six: 1e3 }, min: 0, minScope: "", held: false },
     { id: "dbsyuu", name: "DBS yuu", group: "dbsyuu", cycle: "cal", caps: { main: 822 }, min: 800, minScope: "all", held: false },
     { id: "scsmart", name: "StanChart Smart", group: "scsmart", cycle: "stmt", caps: {}, min: 1500, minScope: "all", held: false },
-    { id: "uobladys", name: "UOB Lady's Card", group: "uobladys", cycle: "cal", caps: { main: 1e3 }, min: 0, minScope: "", held: false },
+    { id: "uobladys", name: "UOB Lady's Card", group: "uobladys", cycle: "cal", caps: { dining: 1e3, travel: 1e3, fashion: 1e3, family: 1e3, transport: 1e3, beauty: 1e3, entertainment: 1e3 }, min: 0, minScope: "", held: false },
     { id: "maybankhorizon", name: "Maybank Horizon VS", group: "maybankhorizon", cycle: "cal", caps: { air: 1e4 }, min: 800, minScope: "all", held: false }
   ];
   const MERCHANTS = [
@@ -682,6 +687,7 @@ var MCCX = (() => {
       pv: { block: 5, approx: false, why: "UNI$ per S$5, per transaction" },
       vs: { block: 5, approx: false, why: "UNI$ per S$5, per transaction" },
       ls: { block: 5, approx: false, why: "UNI$ per S$5, per transaction" },
+      uobladys: { block: 5, approx: false, why: "UNI$ per S$5, per transaction" },
       citi: { block: 1, approx: false, why: "Per S$1, per transaction" },
       citiamaze: { block: 1, approx: false, why: "Per S$1, per transaction" },
       hsbc: { block: 1, approx: false, why: "Rounded down to S$1" },
@@ -809,6 +815,13 @@ var MCCX = (() => {
     const label = String(added && added.referralLabel || slot.label || "Apply").trim() || "Apply";
     const disclosure = String(added && added.disclosure || slot.disclosure || "Referral link").trim() || "Referral link";
     return { url, label, disclosure };
+  }
+  function ladySettings(saved) {
+    const keys = LS_CATS.map((c) => c.key);
+    const given = saved && saved.ls ? saved.ls : [];
+    const ls = given.length === 2 && given[0] !== given[1] && keys.indexOf(given[0]) >= 0 && keys.indexOf(given[1]) >= 0 ? given.slice(0, 2) : ["dining", "travel"];
+    const ladys = saved && keys.indexOf(saved.ladys || "") >= 0 ? saved.ladys : ls[0];
+    return { ls, ladys };
   }
   function capThresholds(beforeUsed, afterUsed, cap) {
     if (!(cap > 0)) return [];
@@ -977,11 +990,11 @@ var MCCX = (() => {
   }
   function reconcileStatement(input) {
     const meta = META.filter((m) => m.id === input.cardId)[0];
-    const ls = input.ls && input.ls.length ? input.ls : ["dining", "travel"];
+    const ls = input.ls === void 0 ? ["dining", "travel"] : input.ls;
     const block = blockOf(input.cardId);
     const txns = (input.txns || []).filter((t) => t && t.amount > 0).slice().sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
     const rated = txns.map((t) => {
-      const res = lookupAll(t.mcc || 0, t.mode, { ls }).filter((r) => r.id === input.cardId)[0];
+      const res = lookupAll(t.mcc || 0, t.mode, { ls, ladys: input.ladys }).filter((r) => r.id === input.cardId)[0];
       return { t, res };
     });
     const min = meta ? meta.min : 0;

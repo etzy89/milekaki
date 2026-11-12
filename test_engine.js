@@ -115,6 +115,18 @@ const lsStmt=M.reconcileStatement({cardId:"ls",txns:[
   {date:"2026-11-03",descriptor:"MORE",amount:700,mcc:5812,mode:"tap"}
 ]});
 ok(lsStmt.totalMiles===3020 && lsStmt.bonusMiles===3000 && lsStmt.baseMiles===20 && lsStmt.rows[1].capHit,"Lady's statement");
+const migrated=M.ladySettings({ls:["fashion","beauty"]});
+ok(migrated.ls.join(",")==="fashion,beauty" && migrated.ladys==="fashion","existing categories stay on Solitaire");
+ok(M.ladySettings({ls:["dining","travel"],ladys:"family"}).ladys==="family","Lady's category stored separately");
+ok(get(5812,"tap","ls",{ls:[]}).mpd===0.4,"Solitaire with no categories is base");
+ok(get(5812,"tap","ls",{ls:["dining","travel"]}).mpd===4,"Solitaire dining");
+ok(get(5812,"tap","uobladys",{ladys:""}).mpd===0.4,"Lady's card with no category is base");
+const ladyDining=get(5812,"tap","uobladys",{ladys:"dining"});
+ok(ladyDining.mpd===4 && ladyDining.bucket==="dining" && /1,000/.test(ladyDining.cap),"Lady's one category and S$1,000 cap");
+ok(get(5812,"tap","uobladys",{ladys:"fashion"}).mpd===0.4,"Lady's other category stays base");
+ok(get(5651,"tap","uobladys",{ladys:"fashion"}).mpd===4,"Lady's fashion");
+const ladyCap=M.reconcileStatement({cardId:"uobladys",ladys:"dining",txns:[{date:"2026-11-02",descriptor:"DINNER",amount:1100,mcc:5812,mode:"tap"}]});
+ok(ladyCap.totalMiles===4040 && ladyCap.bonusMiles===4000 && ladyCap.baseMiles===40 && ladyCap.rows[0].capHit,"Lady's S$1,000 cap");
 const gap=M.explainMilesGap(pv.rows,20,2000);
 ok(gap.delta===-400 && gap.likely.some(r=>r.descriptor==="IKEA") && gap.likely.some(r=>r.descriptor==="AIA"),"shortfall points at cap and exclusion");
 const page=fs.readFileSync(__dirname+"/public/mcc/5651.html","utf8");

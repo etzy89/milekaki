@@ -12,7 +12,10 @@
   var settings = load("mm.settings", {});
   if (!settings.held) { settings.held = {}; MINE.forEach(function (id) { settings.held[id] = true; }); M.ADDED.forEach(function (a) { settings.held[a.id] = false; }); }
   M.ADDED.forEach(function (a) { if (settings.held[a.id] === undefined) settings.held[a.id] = false; });
-  if (!settings.ls || settings.ls.length !== 2) settings.ls = ["dining", "travel"];
+  var hadLadys = typeof settings.ladys === "string";
+  var lady = M.ladySettings(settings);
+  settings.ls = lady.ls;
+  settings.ladys = lady.ladys;
   if (!settings.stmt) settings.stmt = {};
   if (!settings.ffp) settings.ffp = "KrisFlyer";
   if (settings.showAll === undefined) settings.showAll = false;
@@ -21,6 +24,7 @@
   var state = { mode: MODE_IDS.indexOf(settings.mode) >= 0 ? settings.mode : (oldMode === "online" ? "online" : "wallet"), tags: [], merchant: null };
   var log = load("mm.log", []).filter(function (e) { return e && e.date && (Date.now() - new Date(e.date).getTime()) < 100 * 864e5; });
   function persist() { save("mm.settings", settings); save("mm.log", log); }
+  if (!hadLadys) persist();
 
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
   function fmt(x) { return (Math.round(x * 100) / 100).toString(); }
@@ -43,6 +47,10 @@
     });
   }
   function grp(n) { var r = Math.round(n * 100) / 100, p = Math.abs(r).toString().split("."), g = p[0].replace(/\B(?=(\d{3})+(?!\d))/g, ","); return (r < 0 ? "-" : "") + (p[1] ? g + "." + p[1] : g); }
+  function owned(id) { return !!(settings.held && settings.held[id]); }
+  function ladyOpts(extra) {
+    return { ls: owned("ls") ? settings.ls.slice() : [], ladys: owned("uobladys") ? settings.ladys : "", tags: extra || [] };
+  }
   function quoteFor(r, amt) {
     var meta = metaOf(r.id), b = M.blockOf(r.id), cap = null, usedAmt = 0, spentAmt = 0, min = 0;
     if (meta) {
@@ -127,7 +135,7 @@
     if (n) { var hit = ctxRows(n); parts.push(hit.length ? hit.map(function (r) { return r.d + " (" + r.m + ")"; }).join(" · ") : "Not a named spend type: each card's general rule applies"); }
     ctx.textContent = parts.join(" — ");
     var amt = parseFloat(amtIn.value) || 0;
-    var res = M.lookupAll(n, state.mode, { ls: settings.ls, tags: state.tags });
+    var res = M.lookupAll(n, state.mode, ladyOpts(state.tags));
     var all = res.map(function (r, i) { return { r: r, ev: amt > 0 ? null : evaluate(r, amt), q: amt > 0 ? quoteFor(r, amt) : null, i: i }; });
     var rows = all.filter(function (x) { return settings.showAll || settings.held[x.r.id]; });
     rows.sort(function (a, b) {
@@ -249,7 +257,7 @@
 
   // ----- tracker -----
   function trackIds() { return M.META.filter(function (m) { return settings.held[m.id] && m.id !== "citiamaze"; }).map(function (m) { return m.id; }).concat(M.ADDED.filter(function (a) { return settings.held[a.id] && !metaOf(a.id); }).map(function (a) { return a.id; })); }
-  function bucketsOf(id) { var meta = metaOf(id); if (!meta) return []; var b = Object.keys(meta.caps); if (id === "ls") b = settings.ls.slice(); return b; }
+  function bucketsOf(id) { var meta = metaOf(id); if (!meta) return []; var b = Object.keys(meta.caps); if (id === "ls") b = owned("ls") ? settings.ls.slice() : []; if (id === "uobladys") b = owned("uobladys") && settings.ladys ? [settings.ladys] : []; return b; }
   function bucketLabel(b) { var c = M.LS_CATS.filter(function (x) { return x.key === b; })[0]; return c ? c.label : ({ contactless: "Mobile contactless", online: "Online", local: "Petrol + contactless (SGD)", fcy: "Foreign currency", main: "Bonus", six: "6 mpd promo", air: "Air tickets" }[b] || b); }
   function renderFormBuckets() {
     var id = $("f-card").value;
@@ -279,7 +287,7 @@
   $("f-mcc").addEventListener("input", function () {
     var id = $("f-card").value, v = $("f-mcc").value.replace(/\D/g, "");
     if (v.length !== 4) return;
-    var r = M.lookupAll(+v, state.mode, { ls: settings.ls }).filter(function (x) { return x.id === id; })[0];
+    var r = M.lookupAll(+v, state.mode, ladyOpts()).filter(function (x) { return x.id === id; })[0];
     if (r) $("f-bucket").value = r.mpd > r.base ? r.bucket : "";
   });
   $("f-add").addEventListener("click", function () {
@@ -295,7 +303,11 @@
     var pick = MINE.map(function (id) { return { id: id, name: MINE_NAMES[id] }; }).concat(M.ADDED.map(function (a) { return { id: a.id, name: a.name }; }));
     $("held").innerHTML = grouped(pick).map(function (g) { return "<h3>" + esc(g.label) + "</h3>" + g.items.map(function (it) { return cb(it.id, it.name); }).join(""); }).join("");
     var opts = M.LS_CATS.map(function (c) { return '<option value="' + c.key + '">' + esc(c.label) + "</option>"; }).join("");
-    $("ls1").innerHTML = opts; $("ls2").innerHTML = opts; $("ls1").value = settings.ls[0]; $("ls2").value = settings.ls[1];
+    var showLs = owned("ls"), showLady = owned("uobladys");
+    $("ls-block").hidden = !showLs;
+    $("ladys-block").hidden = !showLady;
+    if (showLs) { $("ls1").innerHTML = opts; $("ls2").innerHTML = opts; $("ls1").value = settings.ls[0]; $("ls2").value = settings.ls[1]; }
+    if (showLady) { $("ladys").innerHTML = opts; $("ladys").value = settings.ladys; }
     var st = M.META.filter(function (m) { return m.cycle === "stmt" && settings.held[m.id] && m.id !== "citiamaze"; });
     $("stmt").innerHTML = st.map(function (m) { return '<label class="stl">' + esc(m.name) + ' <input type="number" min="1" max="31" inputmode="numeric" data-stmt="' + m.group + '" value="' + esc(settings.stmt[m.group] || "") + '" placeholder="day"></label>'; }).join("") || '<p class="hint">None of your held cards uses a statement-month cap.</p>';
     $("ffp").value = settings.ffp;
@@ -303,6 +315,7 @@
   }
   $("held").addEventListener("change", function (e) { var id = e.target.dataset.held; if (!id) return; settings.held[id] = e.target.checked; persist(); renderAll(); });
   ["ls1", "ls2"].forEach(function (k, i) { $(k).addEventListener("change", function () { var v = $(k).value, other = settings.ls[1 - i]; if (v === other) { alert("Pick two different categories."); $(k).value = settings.ls[i]; return; } settings.ls[i] = v; persist(); renderAll(); }); });
+  $("ladys").addEventListener("change", function () { settings.ladys = $("ladys").value; persist(); renderAll(); });
   $("stmt").addEventListener("input", function (e) { var g = e.target.dataset.stmt; if (!g) return; var v = parseInt(e.target.value, 10); if (v >= 1 && v <= 31) settings.stmt[g] = v; else delete settings.stmt[g]; persist(); renderLookup(); renderTrack(); });
   $("ffp").addEventListener("change", function () { settings.ffp = $("ffp").value; persist(); renderLookup(); });
   $("notify").addEventListener("change", function (e) {
@@ -448,7 +461,7 @@
     var txns = stmtTxns.filter(function (t) { return !month || String(t.date).slice(0, 7) === month; }).map(function (t) {
       return { date: t.date, descriptor: t.descriptor, amount: t.amount, currency: t.currency, mcc: parseInt(t.mcc, 10) || 0, mode: t.mode };
     });
-    stmtResult = M.reconcileStatement({ cardId: $("rec-card").value, txns: txns, ls: settings.ls });
+    stmtResult = M.reconcileStatement({ cardId: $("rec-card").value, txns: txns, ls: owned("ls") ? settings.ls : [], ladys: owned("uobladys") ? settings.ladys : "" });
     var r = stmtResult;
     $("rec-out").innerHTML = '<p><b>' + grp(r.totalMiles) + " miles</b> · bonus " + grp(r.bonusMiles) + " · base " + grp(r.baseMiles) + (r.minMet ? "" : " · minimum spend not met, bonus withheld") + "</p>" +
       '<table class="recon"><thead><tr><th>Merchant</th><th>Split</th><th>Miles</th></tr></thead><tbody>' + r.rows.map(function (row) {
