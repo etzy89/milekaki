@@ -1,6 +1,6 @@
 {
-  "name": "MCC Miles",
-  "short_name": "MCC Miles",
+  "name": "MaxiMiles",
+  "short_name": "MaxiMiles",
   "description": "Which of my cards earns the most KrisFlyer miles for an MCC. Data as of Nov 2026.",
   "start_url": "./",
   "scope": "./",

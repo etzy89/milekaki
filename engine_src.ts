@@ -115,7 +115,7 @@ const SUMMARY: TableCell[][] = [
   ["Maybank XL Rewards", "4 mpd", "Whitelisted Dine/Shop/Travel/Play MCCs, plus all FCY spend", "S$1,000 per calendar month", "S$500 eligible spend per calendar month", "S$5 blocks per transaction (T&C)"],
 ];
 
-// ===== ENGINE (shared verbatim between the Grok Page and the MaxiMile app) =====
+// ===== ENGINE (shared verbatim between the Grok Page and the MaxiMiles app) =====
 type Mode = "tap" | "chip" | "wallet" | "online" | "fcy" | "fcyon";
 type Res = { id: string; group: string; card: string; mpd: number; base: number; bucket: string; how: string; cap: string; note: string; kf: string; flag: boolean; added: boolean };
 type Opts = { ls?: string[]; tags?: string[] };
