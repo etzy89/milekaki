@@ -95,7 +95,7 @@ var MCCX = (() => {
     { m: "FCY online", d: "Foreign-currency websites", g: "Travel & FCY", v: ["+if whitelisted MCC", "+\u2020 unless SG gateway", "+non-travel", "+non-travel", "+", "~Only chosen-category MCCs", "+if whitelisted MCC", "~1.3 mpd, 0% FX fee", "+\u2020 all FCY"] },
     // Transport
     { m: "4121", d: "Taxis & ride-hailing (Grab, Gojek)", g: "Transport", v: ["+in-taxi mobile tap; in-app = base", "+tap\u2020", "+in-app", "+1% fee", "+in-app", "~Base (Transport cat.)", "+tap/online", T13, B] },
-    { m: "4111", d: "SimplyGo bus/MRT", g: "Transport", v: ["+counts as mobile contactless", "+\u2020 counts as contactless", "xBUS/MRT excluded", "xAMAZE* transit excluded", "~Base (MileLion, Feb 2026)", "~Base (Transport cat.)", B, "~1.3 mpd; S$5 rounding", "~Base (bus/MRT not excluded)"] },
+    { m: "4111", d: "SimplyGo bus/MRT", g: "Transport", v: ["+counts as mobile contactless", "+\u2020 counts as contactless", "xBUS/MRT excluded", "xAMAZE* transit excluded", "+online only", "~Base (Transport cat.)", B, T13, "~Base (bus/MRT not excluded)"] },
     { m: "5541 5542", d: "Petrol (UOB: SPC & Shell earn nothing)", g: "Transport", v: ["+mobile tap", "+\u2020 petrol category", B, "+1% fee", B, "~Base (Transport cat.)", B, T13, B] },
     { m: "7523", d: "Parking", g: "Transport", v: [X, X, X, X, X, X, X, "~1.3 mpd (not excluded)", X] },
     { m: "4784", d: "Tolls", g: "Transport", v: [B, B, B, B, X, B, B, T13, B] },
@@ -125,7 +125,7 @@ var MCCX = (() => {
     { m: "Card tap", d: "Tapping the physical card in store", g: "Channels", v: ["~Base (needs phone wallet)", "+\u2020", "~Base unless fashion MCC", "~n/a", B, "+if chosen-category MCC", "+if whitelisted MCC", T13, "+if whitelisted MCC\u2020"] },
     { m: "Kris+", d: "Paying in the Kris+ app (MCC depends on the merchant)", g: "Channels", v: ["~MCC-dependent", "~MCC-dependent", "~No bonus (Citi alone)", "+4 mpd (1% fee)", "+4 mpd (in-app = online)", "~MCC-dependent", "~MCC-dependent", "~MCC-dependent", "~MCC-dependent"] },
     { m: "Atome", d: "Atome pay-later (MCC depends on the merchant)", g: "Channels", v: ["~MCC-dependent", "~MCC-dependent", "+4 mpd", "~n/a", "+4 mpd", "~MCC-dependent", "+4 mpd (KrisFlyer 3.33)", "~MCC-dependent", "~MCC-dependent"] },
-    { m: "Recurring", d: "Subscriptions, card-on-file", g: "Channels", v: ["~Base (recurring excl. from online bonus)", B, "+online", "+1% fee", "+online", "~MCC-based", "+card-on-file counts if MCC listed", "?Recurring wording unclear", "~MCC-based"] }
+    { m: "Recurring", d: "Subscriptions, card-on-file", g: "Channels", v: ["~Base (recurring excl. from online bonus)", B, "+online", "+1% fee", "+online", "~MCC-based", "+card-on-file counts if MCC listed", T13, "~MCC-based"] }
   ];
   const GROUPS = ["All", "Dining", "Shopping", "Travel & FCY", "Transport", "Bills & services", "No points", "Channels"];
   const SUMMARY = [
@@ -135,7 +135,7 @@ var MCCX = (() => {
     ["DBS Woman's World", "4 mpd online; 1.2 mpd FCY offline", "Any online spend (blacklist approach)", "S$1,000 online per calendar month (transaction date)", "None", "Amount \xF7 5, rounded down (no S$5 blocks)"],
     ["UOB Lady's Solitaire", "4 mpd", "MCCs in your 2 chosen categories (Dining, Travel)", "S$750 per category, per calendar month", "None", "UNI$ per S$5"],
     ["HSBC Revolution", "4 mpd; KrisFlyer: 3.33 mpd (30,000:10,000 since 16 Jan 2025); 8 mpd with S$50k EGA", "Contactless or online and a whitelisted MCC", "S$1,000 per calendar month (S$1,200 at 8 mpd)", "None", "Monthly total, rounded down to S$1"],
-    ["Trust Freedom (Miles mode)", "1.3 mpd flat, 0% FX fee", "Everything not excluded", "No cap", "None", "S$5 blocks (per MileLion)"],
+    ["Trust Freedom (Miles mode)", "1.3 mpd flat, 0% FX fee", "Everything not excluded", "No cap", "None", "None"],
     ["Maybank XL Rewards", "4 mpd", "Whitelisted Dine/Shop/Travel/Play MCCs, plus all FCY spend", "S$1,000 per calendar month", "S$500 eligible spend per calendar month", "S$5 blocks per transaction (T&C)"]
   ];
   const MODES = [
@@ -252,7 +252,7 @@ var MCCX = (() => {
       return z(4, base, "online", "Any online transaction (not phone/mail order)", cap, rb + (m === "fcyon" ? "3.25% FX fee" : "General rule: blacklist card, so any MCC that isn't excluded"));
     }
     if (m === "fcy") return z(1.2, 1.2, "", "Overseas in-store FCY: 3X", "\u2014", "3.25% FX fee");
-    return z(0.4, 0.4, "", "In-store, even with a phone tap: base", "\u2014", n === 4111 ? "SimplyGo earns base: MileLion SimplyGo guide (15 Feb 2026) lists DBS as awarding points" : "");
+    return z(0.4, 0.4, "", "In-store, even with a phone tap: base", "\u2014", "");
   }
   function rLS(n, cats) {
     const c = "UOB LS", cap = "S$750/cal. month per category";
@@ -281,9 +281,9 @@ var MCCX = (() => {
   function rTrust(n) {
     const z = (mpd, how, k, note2) => R("trust", "trust", "Trust", mpd, mpd, "", how, k, note2, false);
     if (TRUST_X(n)) return z(0, NONE, "\u2014", "On Trust's exclusion list (T&Cs v3, 19 Oct 2026)");
-    if (n === 4111) return z(1.3, "Any channel, no min. spend, 0% FX fee", "No cap", "4111 isn't excluded (Trust T&Cs v3, 19 Oct 2026). S$5 rounding per transaction (MileLion, 24 Sep 2026), so a daily fare under S$5 earns nothing");
+    if (n === 4111) return z(1.3, "Any channel, no min. spend, 0% FX fee", "No cap", "4111 isn't excluded (Trust T&Cs v3, 19 Oct 2026)");
     const note = n === 8062 || n === 7523 ? "Not excluded here, though most cards earn 0" : "General rule: flat rate on everything not excluded";
-    return z(1.3, "Any channel, no min. spend, 0% FX fee", "No cap", `${note}; S$5 rounding; transfers 1:1 to KrisFlyer or Max Miles`);
+    return z(1.3, "Any channel, no min. spend, 0% FX fee", "No cap", `${note}; transfers 1:1 to KrisFlyer or Max Miles`);
   }
   function rXL(n, m) {
     const c = "MB XL", cap = "S$1,000/cal. month; S$500 min. spend";
@@ -676,7 +676,6 @@ var MCCX = (() => {
       citi: { block: 1, approx: false, why: "Per S$1, per transaction" },
       citiamaze: { block: 1, approx: false, why: "Per S$1, per transaction" },
       hsbc: { block: 1, approx: false, why: "Rounded down to S$1" },
-      trust: { block: 5, approx: true, why: "S$5 rounding is from MileLion, not Trust's T&Cs" },
       xl: { block: 5, approx: false, why: "S$5 blocks per transaction (T&Cs)" },
       ocbcrewards: { block: 5, approx: true, why: "S$5 rounding is from the card guide, not checked against OCBC T&Cs" }
     };
